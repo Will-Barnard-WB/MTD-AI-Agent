@@ -41,9 +41,9 @@ These are not style preferences. Violating one is a defect, even if tests pass.
    due) is pure Python over those typed objects. Enforced by types: `compute_vat()` takes
    `CategorisedTransaction[]` and returns `VatBoxes` — there is no code path where model text
    becomes a box figure.
-2. **Structured outputs only.** The single LLM step is one schema-constrained Messages call
-   (`response_format` / tool-based structured output). No free-form agent "deciding" figures,
-   no multi-agent loop in v1.
+2. **Structured outputs only.** The single LLM step is one schema-constrained call — OpenAI
+   **Structured Outputs** (`response_format` = a strict `json_schema`). No free-form agent
+   "deciding" figures, no multi-agent loop in v1.
 3. **Human-in-the-loop approval, built for an expert.** Before submit, render the **full
    derivation**: each box figure, the source transactions behind it, prior-period deltas, and
    anomaly flags. A human explicitly approves. The gate is in from day one — **even in sandbox.**
@@ -149,8 +149,10 @@ Will's test user and:
 
 - Python 3.12, **LangGraph** for the spine, **pydantic v2** for all domain models, **httpx**
   for HMRC, **pytest** + **ruff**.
-- LLM: **Anthropic Messages API, structured output.** Default extraction model
-  `claude-sonnet-4-6`; high-volume categorisation may use `claude-haiku-4-5-20251001`. Model id
-  via `config.py` / env, never hard-coded in nodes. (Extraction is classification → a single
-  call, not an agent. Opus is not needed here.)
+- LLM: **OpenAI, Structured Outputs** (`response_format` = strict `json_schema`). Chosen for v1
+  to spend existing OpenAI credits. Default extraction model `gpt-4o-mini` (cheap; good for the
+  budget); stronger option `gpt-4o`. Model id + provider client via `config.py` / env, **never
+  hard-coded in nodes** — keep the LLM call behind a thin `extract` boundary so the provider can
+  be swapped (back to Anthropic, etc.) by changing config alone. (Extraction is classification →
+  a single call, not an agent.)
 - Secrets via `.env` (a `.env.example` is committed; real `.env` is git-ignored).

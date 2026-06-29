@@ -91,7 +91,7 @@ mtd-agent/
 
 ### Stream B — Pipeline + deterministic core  *(Instance B, branch `stream-b-pipeline`, codes against the Protocol + Fake)*
 - [ ] **B1** `nodes/ingest.py` — CSV → `list[Transaction]`.
-- [ ] **B2** `nodes/extract.py` — single structured-output Messages call → `CategorisedTransaction[]`. **The only LLM call.**
+- [ ] **B2** `nodes/extract.py` — single structured-output LLM call (OpenAI Structured Outputs, strict `json_schema`) → `CategorisedTransaction[]`. **The only LLM call.** Keep the provider behind this boundary so config alone can swap it.
 - [ ] **B3** `nodes/completeness.py` — deterministic completeness guard; route back if inputs incomplete.
 - [ ] **B4** `nodes/compute_vat.py` — **PURE** `compute_vat(txns) -> VatBoxes`. Fully unit-tested with fixtures.
 - [ ] **B5** `nodes/approval.py` — render full derivation (boxes + source txns + prior-period deltas + anomaly flags) → await explicit human approval.
