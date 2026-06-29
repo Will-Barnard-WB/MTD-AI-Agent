@@ -3,6 +3,22 @@ _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
 
+## [2026-06-29] stream-b | Pipeline slice complete, green, demo runs end-to-end
+Stream B (pipeline) built against the Fake client + offline categoriser — no creds used.
+28 tests pass, ruff clean. Nodes: `ingest` (CSV→Transactions, UK dates/£, direction inference),
+`extract` (the ONLY LLM call — OpenAI Structured Outputs `OpenAICategoriser` + offline
+`FakeCategoriser`; returns `TxnCategory` with **no money field**, merged to txns by id),
+`completeness` (deterministic guard), `compute_vat` (**PURE**, exhaustively tested, gross-strip +
+rounding), `approval` (HITL — full derivation render + anomaly flags + `CLIApprover`/`AutoApprover`),
+`submit` (delegates to Protocol, idempotent). Spine in `graph/pipeline.py` with audit at every step;
+`cli.py demo` runs `examples/sample_transactions.csv` → boxes → approval → fake submit → audit log.
+Safety test `test_no_llm_figures` proves model free-text cannot move a figure.
+**Deviation flagged (Stream-B-internal, no shared surface):** spine is an explicit orchestrator,
+not yet a LangGraph StateGraph — nodes kept pure so a LangGraph/interrupt wrapper layers on later
+(see `graph/state.py` docstring). **For Phase 3:** swap `FakeHmrcVatClient` → Stream A's real
+`vat_client` in `cli.py` + `run_pipeline`. New VAT-rule questions for the accountant added to
+`BLOCKERS.md` (gross vs net amounts, box 6-9 rounding). Did NOT touch `models.py`/`interfaces.py`.
+
 ## [2026-06-29] phase-0 | Foundations built — FROZEN SHARED SURFACE, streams may now split
 Phase 0 complete and green (13 tests, ruff clean, Python 3.12). Built:
 - `models.py` — all domain models. `VatBoxes` enforces box3=box1+box2 and box5=|box3-box4|
