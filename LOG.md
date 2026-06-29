@@ -19,6 +19,19 @@ not yet a LangGraph StateGraph — nodes kept pure so a LangGraph/interrupt wrap
 `vat_client` in `cli.py` + `run_pipeline`. New VAT-rule questions for the accountant added to
 `BLOCKERS.md` (gross vs net amounts, box 6-9 rounding). Did NOT touch `models.py`/`interfaces.py`.
 
+## [2026-06-29] stream-A | HMRC VAT client ported + green (offline scope done)
+Branch `stream-a-hmrc` (own git worktree at `../mtd-agent-stream-a` so it can't collide with
+the main tree). Built `src/mtd_agent/hmrc/`: `errors.py` (typed `HmrcUserError`/`HmrcSystemError`/
+`HmrcAuthError`, `kind = user_fixable|system`), `fraud_headers.py` (ported Gov-Client/Vendor
+builder, vendor renamed MTDAgent), `auth.py` (OAuth2 token cache + silent refresh, re-pointed
+through `config.Settings`/`assert_sandbox` so the sandbox guard is unavoidable), `idempotency.py`
+(persisted `(VRN,periodKey)->SubmitReceipt` ledger), `vat_client.py` (implements the
+`HmrcVatClient` Protocol; **no box figure originates here** — serialises a ready `VatReturnPayload`;
+idempotent submit; typed error mapping). **14 unit tests green, ruff clean**, all offline via
+`httpx.MockTransport`. Did NOT touch `models.py`/`interfaces.py`/`fake_client.py`.
+**Still blocked (creds):** the one live sandbox smoke test + the `get_token` first-auth flow.
+See BLOCKERS for the new `.env`-in-worktree ask.
+
 ## [2026-06-29] phase-0 | Foundations built — FROZEN SHARED SURFACE, streams may now split
 Phase 0 complete and green (13 tests, ruff clean, Python 3.12). Built:
 - `models.py` — all domain models. `VatBoxes` enforces box3=box1+box2 and box5=|box3-box4|
