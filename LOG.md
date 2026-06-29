@@ -3,6 +3,18 @@ _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
 
+## [2026-06-29] phase-3 | Streams integrated; --live wired; get_token built — only the live run remains
+Merged `stream-a-hmrc` into master (resolved the predicted LOG.md conflict, kept both stream
+blocks). Wired the real client into `cli.py`: new `--live` flag swaps `FakeHmrcVatClient` →
+`HmrcVatClient` (offline Fake stays the default); creds/VRN pre-checks + a graceful `HmrcError`
+catch (no more tracebacks — points the user at get_token). Ported the one-time OAuth flow to
+`src/mtd_agent/hmrc/get_token.py` (`python -m mtd_agent.hmrc.get_token`). **42 tests green, ruff
+clean; offline `demo --fake-llm` runs the full slice end-to-end.** Discovery: `.env` already has
+HMRC_CLIENT_ID/SECRET/TEST_VRN — the ONLY remaining blocker for the live run is the OAuth token
+(run get_token, which needs the redirect URI registered) + `.env` present in the run's working tree.
+**Not yet done (DoD #3/#5):** a real submission to the VAT sandbox + idempotent re-run. Also still
+open: eval harness (3.3) and archiving the old prototypes (3.4, after make demo passes live).
+
 ## [2026-06-29] stream-b | Pipeline slice complete, green, demo runs end-to-end
 Stream B (pipeline) built against the Fake client + offline categoriser — no creds used.
 28 tests pass, ruff clean. Nodes: `ingest` (CSV→Transactions, UK dates/£, direction inference),
