@@ -60,8 +60,9 @@ def run_pipeline(
     # Resolve the open obligation period if not supplied.
     if period_key is None:
         today = date.today()
+        # HMRC caps the obligations query window at 366 days — keep it legal (±180).
         obligations = client.get_obligations(
-            vrn, from_=today - timedelta(days=365), to=today + timedelta(days=365),
+            vrn, from_=today - timedelta(days=180), to=today + timedelta(days=180),
             status=ObligationStatus.OPEN,
         )
         if not obligations:

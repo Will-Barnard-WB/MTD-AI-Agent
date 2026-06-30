@@ -1,0 +1,21 @@
+{
+  "treatments": {
+    "S1": "standard",
+    "S2": "zero",
+    "P1": "standard",
+    "P2": "exempt",
+    "P3": "outside_scope",
+    "P4": "reduced"
+  },
+  "expected_boxes": {
+    "box1_vat_due_sales": "200.00",
+    "box2_vat_due_acquisitions": "0.00",
+    "box3_total_vat_due": "200.00",
+    "box4_vat_reclaimed": "105.00",
+    "box5_net_vat_due": "95.00",
+    "box6_total_sales_ex_vat": 1100,
+    "box7_total_purchases_ex_vat": 650,
+    "box8_total_goods_supplied_ex_vat": 0,
+    "box9_total_acquisitions_ex_vat": 0
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "treatments": {
+    "S1": "standard",
+    "P1": "standard"
+  },
+  "expected_boxes": {
+    "box1_vat_due_sales": "16.67",
+    "box2_vat_due_acquisitions": "0.00",
+    "box3_total_vat_due": "16.67",
+    "box4_vat_reclaimed": "9.25",
+    "box5_net_vat_due": "7.42",
+    "box6_total_sales_ex_vat": 83,
+    "box7_total_purchases_ex_vat": 46,
+    "box8_total_goods_supplied_ex_vat": 0,
+    "box9_total_acquisitions_ex_vat": 0
+  }
+}

@@ -3,6 +3,23 @@ _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
 
+## [2026-07-01] v1-DONE | Live sandbox submit + idempotent re-run PASS — DoD met
+**v1 is functionally complete.** Will ran `demo --live` against the real HMRC VAT sandbox:
+submitted and got form bundle **034881039945**; re-ran and got the **same** bundle (idempotent,
+no double-file) → DoD #3 and #5 proven end-to-end. Fixes this session:
+- `pipeline.py`: obligations query window was ±365 days (>HMRC's 366-day cap) → live
+  `INVALID_DATE_RANGE`. Narrowed to ±180 days.
+- `fake_client.py`: default open obligation was hard-coded to Q1-2026; once "today" advanced past
+  it the today-relative window missed it (demo + tests returned NO_OPEN_PERIOD). Made the default
+  obligation **anchored to today** (start−45/end+45/due+75) → date-stable demo and tests.
+- **Eval harness (PLAN 3.3)** added: `src/mtd_agent/eval_harness.py` + `evals/cases/` (3 labelled
+  CSVs) + `tests/test_evals.py`. Measures deterministic-core correctness (compute_vat vs
+  hand-computed expected boxes) and categorisation accuracy. Offline Fake = 90%; run the online
+  OpenAI eval with `python -m mtd_agent.eval_harness --real-llm`.
+- **44 tests green, ruff clean.** Subscriptions needed on the sandbox app: VAT (MTD) [required],
+  Create Test User, Test Fraud Prevention Headers.
+**Only remaining (optional):** archive the old prototypes (3.4) now that make demo passes live.
+
 ## [2026-06-29] phase-3 | Streams integrated; --live wired; get_token built — only the live run remains
 Merged `stream-a-hmrc` into master (resolved the predicted LOG.md conflict, kept both stream
 blocks). Wired the real client into `cli.py`: new `--live` flag swaps `FakeHmrcVatClient` →

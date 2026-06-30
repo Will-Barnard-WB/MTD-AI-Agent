@@ -1,0 +1,7 @@
+id,date,description,amount,direction
+S1,2026-01-15,Consulting fee invoice,1200.00,sale
+S2,2026-02-03,Train tickets to client site,100.00,sale
+P1,2026-01-20,Office supplies and stationery,600.00,purchase
+P2,2026-02-10,Professional indemnity insurance,50.00,purchase
+P3,2026-01-31,Staff salary payment,2000.00,purchase
+P4,2026-02-12,Reduced-rate domestic fuel,105.00,purchase

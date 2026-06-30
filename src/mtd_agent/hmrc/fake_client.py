@@ -11,7 +11,7 @@ Stream A's real vat_client must match this contract (see tests).
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from mtd_agent.models import (
     Obligation,
@@ -21,19 +21,26 @@ from mtd_agent.models import (
 )
 
 
+def _default_open_obligation() -> Obligation:
+    """An open period anchored to *today*, so the pipeline's today-relative
+    obligations window always finds it (and tests/demo stay date-stable)."""
+    today = date.today()
+    return Obligation(
+        period_key="24A1",
+        start=today - timedelta(days=45),
+        end=today + timedelta(days=45),
+        due=today + timedelta(days=75),
+        status=ObligationStatus.OPEN,
+    )
+
+
 class FakeHmrcVatClient:
     """Deterministic, offline stand-in for the real HMRC VAT client."""
 
     def __init__(self, obligations: list[Obligation] | None = None) -> None:
-        self._obligations = obligations if obligations is not None else [
-            Obligation(
-                period_key="24A1",
-                start=date(2026, 1, 1),
-                end=date(2026, 3, 31),
-                due=date(2026, 5, 7),
-                status=ObligationStatus.OPEN,
-            )
-        ]
+        self._obligations = (
+            obligations if obligations is not None else [_default_open_obligation()]
+        )
         # (vrn, period_key) -> (payload, receipt) — the idempotency ledger.
         self._submissions: dict[tuple[str, str], tuple[VatReturnPayload, SubmitReceipt]] = {}
         self._counter = 0
