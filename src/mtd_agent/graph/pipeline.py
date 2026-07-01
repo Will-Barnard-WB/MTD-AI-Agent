@@ -1,23 +1,25 @@
-"""The vertical slice, wired end to end.
+"""Public entrypoint for the vertical slice.
 
-ingest → extract → completeness → compute_vat → approval → submit, with an
-AuditEvent emitted at every step. Halts on incomplete inputs, a missing open
-period, or a declined approval — nothing reaches HMRC in those cases.
+`run_pipeline` keeps its v1 signature + `PipelineResult` return, but now drives the
+LangGraph `StateGraph` in `graph/build.py`. The flow and audit events are unchanged:
+
+    ingest → extract → completeness → compute → resolve_period → approval → submit
+
+with an AuditEvent at every step, halting (nothing reaches HMRC) on incomplete inputs,
+a missing open period, or a declined approval.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
 from pathlib import Path
 
 from mtd_agent.audit import AuditLogger
+from mtd_agent.graph.build import PIPELINE_GRAPH, Deps
+from mtd_agent.graph.state import PipelineResult
 from mtd_agent.interfaces import HmrcVatClient
-from mtd_agent.models import ObligationStatus, VatReturnPayload
-from mtd_agent.nodes import compute_vat, completeness, extract, ingest, submit
-from mtd_agent.nodes.approval import Approver, build_derivation
+from mtd_agent.nodes.approval import Approver
 from mtd_agent.nodes.extract import Categoriser
-from mtd_agent.graph.state import PipelineResult, Status
 
 
 def run_pipeline(
@@ -34,57 +36,25 @@ def run_pipeline(
     run_id = uuid.uuid4().hex[:12]
     audit = AuditLogger(run_id) if audit_dir is None else AuditLogger(run_id, audit_dir)
 
-    # B1 — ingest
-    txns = ingest.load_transactions(csv_path)
-    audit.emit("ingest", {"count": len(txns), "csv": str(csv_path)})
+    config = {"configurable": {
+        "deps": Deps(client=client, categoriser=categoriser, approver=approver),
+        "audit": audit,
+        "run_id": run_id,
+    }}
+    initial = {
+        "csv_path": str(csv_path),
+        "vrn": vrn,
+        "finalised": finalised,
+        "period_key": period_key,
+    }
+    final = PIPELINE_GRAPH.invoke(initial, config=config)
 
-    # B2 — extract (the only LLM call)
-    categorised = extract.categorise(txns, categoriser)
-    audit.emit("extract", {"categorised": [
-        {"id": c.txn.id, "treatment": c.treatment.value, "confidence": c.confidence}
-        for c in categorised
-    ]})
-
-    # B3 — completeness guard
-    issues = completeness.check_completeness(txns, categorised)
-    if issues:
-        audit.emit("completeness_failed", {"issues": issues})
-        return PipelineResult(status=Status.INCOMPLETE, run_id=run_id,
-                              audit_path=str(audit.path), issues=issues)
-    audit.emit("completeness_ok", {})
-
-    # B4 — compute (pure)
-    boxes = compute_vat.compute_vat(categorised)
-    audit.emit("compute_vat", boxes.model_dump(mode="json"))
-
-    # Resolve the open obligation period if not supplied.
-    if period_key is None:
-        today = date.today()
-        # HMRC caps the obligations query window at 366 days — keep it legal (±180).
-        obligations = client.get_obligations(
-            vrn, from_=today - timedelta(days=180), to=today + timedelta(days=180),
-            status=ObligationStatus.OPEN,
-        )
-        if not obligations:
-            audit.emit("no_open_period", {})
-            return PipelineResult(status=Status.NO_OPEN_PERIOD, run_id=run_id,
-                                  audit_path=str(audit.path), boxes=boxes)
-        period_key = obligations[0].period_key
-    audit.emit("period_resolved", {"period_key": period_key})
-
-    # B5 — approval gate (HITL)
-    derivation = build_derivation(boxes, categorised)
-    if not approver.approve(derivation):
-        audit.emit("declined", {"period_key": period_key})
-        return PipelineResult(status=Status.DECLINED, run_id=run_id,
-                              audit_path=str(audit.path), boxes=boxes, period_key=period_key)
-    audit.emit("approved", {"period_key": period_key, "anomalies": derivation.anomalies})
-
-    # B6 — submit (idempotent in the client)
-    payload = VatReturnPayload.from_boxes(period_key=period_key, boxes=boxes, finalised=finalised)
-    receipt = submit.submit_return(client, vrn, payload)
-    audit.emit("submitted", {"period_key": period_key,
-                             "form_bundle_number": receipt.form_bundle_number})
-
-    return PipelineResult(status=Status.SUBMITTED, run_id=run_id, audit_path=str(audit.path),
-                          boxes=boxes, period_key=period_key, receipt=receipt)
+    return PipelineResult(
+        status=final["status"],
+        run_id=run_id,
+        audit_path=str(audit.path),
+        boxes=final.get("boxes"),
+        period_key=final.get("period_key"),
+        receipt=final.get("receipt"),
+        issues=final.get("issues", []),
+    )
