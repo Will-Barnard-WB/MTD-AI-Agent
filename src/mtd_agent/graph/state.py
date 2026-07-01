@@ -16,6 +16,7 @@ from typing import TypedDict
 from pydantic import BaseModel, ConfigDict
 
 from mtd_agent.models import CategorisedTransaction, SubmitReceipt, Transaction, VatBoxes
+from mtd_agent.nodes.intake import IntakeResult
 
 
 class Status(str, Enum):
@@ -37,6 +38,7 @@ class GraphState(TypedDict, total=False):
     # working data produced by nodes
     txns: list[Transaction]
     categorised: list[CategorisedTransaction]
+    intake: "IntakeResult"
     issues: list[str]
     boxes: VatBoxes
     receipt: SubmitReceipt

@@ -20,12 +20,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
 from mtd_agent.audit import AuditLogger
 from mtd_agent.interfaces import HmrcVatClient
 from mtd_agent.models import ObligationStatus, VatReturnPayload
-from mtd_agent.nodes import compute_vat, completeness, extract, ingest, submit
+from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
 from mtd_agent.nodes.approval import Approver, build_derivation
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.graph.state import GraphState, Status
@@ -69,6 +71,25 @@ def _extract(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
         for c in categorised
     ]})
     return {"categorised": categorised}
+
+
+def _intake(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
+    """A2 — clarify low-confidence categorisations with the human before compute.
+
+    If any transaction is uncertain, pause via interrupt() with the gaps; the driver
+    (run_pipeline) collects answers from the Questioner and resumes. A confirmed answer
+    only changes a *label* — never a figure (CONTRACT.md §8 A1)."""
+    gaps = intake.detect_gaps(state["categorised"])
+    if not gaps:
+        return {}
+    # Resume value is wrapped ({"answers": ...}) so it is always truthy — LangGraph
+    # ignores a falsy Command(resume=...), and "keep all" is legitimately empty.
+    resumed: dict = interrupt({"gaps": [g.model_dump(mode="json") for g in gaps]})
+    answers: dict[str, str] = resumed.get("answers", {})
+    updated, changed = intake.apply_answers(state["categorised"], answers)
+    result = intake.IntakeResult(asked=[g.txn_id for g in gaps], answers=answers, changed=changed)
+    _audit(config).emit("intake_clarified", {"asked": result.asked, "changed": result.changed})
+    return {"categorised": updated, "intake": result}
 
 
 def _completeness(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -150,6 +171,7 @@ def build_pipeline_graph():
     g = StateGraph(GraphState)
     g.add_node("ingest", _ingest)
     g.add_node("extract", _extract)
+    g.add_node("intake", _intake)
     g.add_node("completeness", _completeness)
     g.add_node("compute", _compute)
     g.add_node("resolve_period", _resolve_period)
@@ -158,13 +180,15 @@ def build_pipeline_graph():
 
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "extract")
-    g.add_edge("extract", "completeness")
+    g.add_edge("extract", "intake")
+    g.add_edge("intake", "completeness")
     g.add_conditional_edges("completeness", _after_completeness, {"compute": "compute", "end": END})
     g.add_edge("compute", "resolve_period")
     g.add_conditional_edges("resolve_period", _after_resolve, {"approval": "approval", "end": END})
     g.add_conditional_edges("approval", _after_approval, {"submit": "submit", "end": END})
     g.add_edge("submit", END)
-    return g.compile()
+    # Checkpointer is required for interrupt()/resume (A2 intake HITL).
+    return g.compile(checkpointer=MemorySaver())
 
 
 PIPELINE_GRAPH = build_pipeline_graph()
