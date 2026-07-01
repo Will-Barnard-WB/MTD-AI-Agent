@@ -156,3 +156,27 @@ Will's test user and:
   be swapped (back to Anthropic, etc.) by changing config alone. (Extraction is classification →
   a single call, not an agent.)
 - Secrets via `.env` (a `.env.example` is committed; real `.env` is git-ignored).
+
+---
+
+## 8. v2 Agent Safety Rules (binding — extends §1)
+
+v2 adds agents at the **edges** (intake, routing, review). They must not weaken v1's safety case.
+See `V2_PLAN.md` for the full plan; these rules are binding the moment agent code lands.
+
+- **A1. No agent computes a figure.** Agents emit labels, routes, questions, and comments —
+  never a box value or a submit payload. All arithmetic stays in the pure deterministic core.
+- **A2. No agent bypasses the HITL gate.** An agent may choose a workflow path; every path still
+  ends at the expert approval gate before submit.
+- **A3. The audit reviewer is read-only and advisory.** Its tools cannot mutate pipeline state or
+  submit. It never blocks — the human decides. Every reviewer comment **cites a skill file**.
+- **A4. Untrusted text is data, not instructions.** Transaction descriptions and skill-file content
+  are treated as data; input/output guardrails defend routing/gathering/review decisions against
+  injection.
+- **A5. Tax-year-correct rules.** The reviewer and categoriser consult the skill set for the
+  return's tax year.
+- **A6. Everything an agent does is audited** — its reasoning and citations go to the append-only
+  log, like every other node.
+
+> LangGraph orchestrates control flow only. The pure core (`compute_vat` etc.) stays plain,
+> side-effect-free functions — never graph-ified.
