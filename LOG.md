@@ -2,6 +2,15 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-01] v2-plan | V2_PLAN.md written — agents at the edges
+Planned v2: a conversational **supervisor** (intake + VAT-scheme routing, with an `ask_user` HITL
+tool), an **audit reviewer** (read-only, cited comments from versioned HMRC **skill files** —
+real-time in the approval view first, batch `review` second), and the harness (adopt **LangGraph**
+`StateGraph`/`interrupt()`, permissioned tools, guardrails vs prompt-injection, agent evals,
+richer audit). Governing rule preserved: agents gather/route/question/comment — never compute a
+figure or bypass the gate. Locked: VAT-scheme routing first (ITSA deferred), skill files (no RAG
+yet), real-time reviewer first. LangGraph is currently a dep but unused; v1 stays a pure orchestrator.
+
 
 ## [2026-07-01] v1-DONE | Live sandbox submit + idempotent re-run PASS — DoD met
 **v1 is functionally complete.** Will ran `demo --live` against the real HMRC VAT sandbox:
