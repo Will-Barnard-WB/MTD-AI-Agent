@@ -2,6 +2,29 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-06] v2 A4 | Input guardrails (PII redaction + injection neutralisation) — Phase A DONE
+New `src/mtd_agent/guardrails.py`: a pure, deterministic regex scanner that runs as a graph node
+**between `ingest` and `extract`** (`ingest → guardrails → extract → …`). It **redacts PII**
+(email, UK NINO, card, sort code, phone) and **neutralises prompt-injection** spans ("ignore
+previous instructions", role tokens, etc.) in transaction descriptions before the one LLM call
+ever sees them — descriptions are data, not instructions (CONTRACT §8 A4). Sanitised text flows on;
+the untouched original stays in `txn.raw`. Audit: `guardrails_flagged` records PII *kinds* (never
+raw values) + the injection phrases as evidence, else `guardrails_ok`. Defence-in-depth: the core
+already blocks figures (§1.1), so worst case an injection mislabels a treatment → still hits the
+HITL gate. Tests: 62 green (was 53), ruff clean; incl. an E2E test proving the categoriser only
+ever sees sanitised text. **Phase A (A1–A4) complete. Next: Phase B** — supervisor VAT-scheme
+routing + pure `compute_vat_flat_rate`/`compute_vat_cash` + routing eval set.
+
+## [2026-07-06] v2 A3 | Full intake Q&A audited + intake eval set (completeness detection)
+Phase A A3 done. **Audit:** `intake_clarified` now carries a structured `qa` log — per gap the
+exact question, the human's raw answer, and the outcome (kept vs changed, from→to *label* only,
+never a figure). New `intake.clarification_log()`. The intake node also emits `intake_no_questions`
+when it runs but has nothing to ask, so the agent's activity is always in the trail (CONTRACT §8 A6).
+**Eval:** new `src/mtd_agent/intake_eval.py` + `evals/intake/cases.json` (5 golden cases) measure
+whether the detector catches what it should — recall (safety-critical: a miss lets an uncertain item
+through unasked) and precision (don't over-ask). `detect_gaps` scores 100%/100%. Tests: 53 green
+(was 44), ruff clean. **Next: A4** — guardrails v1 (PII + prompt-injection scan on txn descriptions).
+
 ## [2026-07-01] v2-plan | V2_PLAN.md written — agents at the edges
 Planned v2: a conversational **supervisor** (intake + VAT-scheme routing, with an `ask_user` HITL
 tool), an **audit reviewer** (read-only, cited comments from versioned HMRC **skill files** —

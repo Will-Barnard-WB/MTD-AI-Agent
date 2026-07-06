@@ -1,0 +1,53 @@
+[
+  {
+    "name": "confident_run_asks_nothing",
+    "note": "Every categorisation is confident — a good intake agent interrupts the human for nothing.",
+    "txns": [
+      {"id": "S1", "description": "Consulting fee, UK client, net £1000", "treatment": "standard", "confidence": 0.96},
+      {"id": "P1", "description": "Office rent (opted-to-tax landlord)", "treatment": "standard", "confidence": 0.92},
+      {"id": "P2", "description": "Train fare, London to Leeds", "treatment": "zero", "confidence": 0.9}
+    ],
+    "should_flag": []
+  },
+  {
+    "name": "one_genuine_ambiguity",
+    "note": "A single low-confidence supply of services to an EU customer must be surfaced.",
+    "txns": [
+      {"id": "S1", "description": "Software subscription, UK customer", "treatment": "standard", "confidence": 0.95},
+      {"id": "S2", "description": "Design work billed to a German company, place of supply unclear", "treatment": "standard", "confidence": 0.42},
+      {"id": "P1", "description": "AWS invoice (reverse charge?)", "treatment": "standard", "confidence": 0.88}
+    ],
+    "should_flag": ["S2"]
+  },
+  {
+    "name": "several_uncertain",
+    "note": "Mixed batch: catch every uncertain item, don't over-ask on the confident ones.",
+    "txns": [
+      {"id": "S1", "description": "Retail sale of children's clothing", "treatment": "zero", "confidence": 0.55},
+      {"id": "S2", "description": "Hot takeaway food", "treatment": "standard", "confidence": 0.97},
+      {"id": "P1", "description": "Client entertainment lunch (blocked input?)", "treatment": "standard", "confidence": 0.35},
+      {"id": "P2", "description": "Printer paper from Ryman", "treatment": "standard", "confidence": 0.94},
+      {"id": "P3", "description": "Insurance premium", "treatment": "standard", "confidence": 0.5}
+    ],
+    "should_flag": ["S1", "P1", "P3"]
+  },
+  {
+    "name": "boundary_confidence",
+    "note": "Exactly at the 0.6 threshold is confident enough; strictly below is not.",
+    "txns": [
+      {"id": "A", "description": "On-the-line item", "treatment": "standard", "confidence": 0.6},
+      {"id": "B", "description": "A hair under the line", "treatment": "standard", "confidence": 0.59}
+    ],
+    "should_flag": ["B"]
+  },
+  {
+    "name": "all_uncertain",
+    "note": "A messy import where the categoriser was unsure about everything.",
+    "txns": [
+      {"id": "T1", "description": "Misc payment ref 4471", "treatment": "outside_scope", "confidence": 0.3},
+      {"id": "T2", "description": "Sundry", "treatment": "standard", "confidence": 0.25},
+      {"id": "T3", "description": "Bank line, no memo", "treatment": "exempt", "confidence": 0.4}
+    ],
+    "should_flag": ["T1", "T2", "T3"]
+  }
+]

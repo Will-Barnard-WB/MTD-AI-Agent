@@ -22,6 +22,7 @@ from mtd_agent.hmrc.fake_client import FakeHmrcVatClient
 from mtd_agent.hmrc.vat_client import HmrcVatClient
 from mtd_agent.nodes.approval import CLIApprover
 from mtd_agent.nodes.extract import FakeCategoriser, OpenAICategoriser
+from mtd_agent.nodes.intake import CLIQuestioner
 
 _DEFAULT_CSV = Path("examples/sample_transactions.csv")
 
@@ -60,6 +61,7 @@ def _demo(args: argparse.Namespace) -> int:
             client=client,
             categoriser=categoriser,
             approver=CLIApprover(),
+            questioner=CLIQuestioner(),
             finalised=not args.draft,
         )
     except HmrcError as exc:

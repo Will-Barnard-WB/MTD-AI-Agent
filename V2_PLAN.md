@@ -123,8 +123,8 @@ New binding rules for agents (extend CONTRACT §1):
 ### Phase A — Supervisor (intake/gathering) + LangGraph backbone
 - [ ] A1 Introduce LangGraph `StateGraph`; wrap the existing pure nodes (no core changes).
 - [ ] A2 `ask_user` tool via `interrupt()`; interactive completeness loop → `IntakeResult`.
-- [ ] A3 Audit every question/answer; intake eval set (completeness detection).
-- [ ] A4 Guardrails v1: PII + injection input scan on transaction descriptions.
+- [x] A3 Audit every question/answer; intake eval set (completeness detection).
+- [x] A4 Guardrails v1: PII + injection input scan on transaction descriptions.
 
 ### Phase B — Supervisor routing + VAT schemes
 - [ ] B1 Supervisor classifies scheme (standard/flat-rate/cash); route to subgraph.
