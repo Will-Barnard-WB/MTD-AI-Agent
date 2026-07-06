@@ -7,10 +7,13 @@ serializable for the checkpointer that A2's HITL interrupts will use.
 
 Flow (early-exits go straight to END, nothing reaches HMRC on those paths):
 
-    ingest → extract → completeness ─┬─(incomplete)─────────────► END
-                                     └─► compute → resolve_period ─┬─(no period)─► END
-                                                                   └─► approval ─┬─(declined)─► END
-                                                                                 └─► submit ─► END
+    ingest → guardrails → extract → intake → completeness ─┬─(incomplete)──────────► END
+                                                           └─► compute → resolve_period ─┬─(no period)─► END
+                                                                                         └─► approval ─┬─(declined)─► END
+                                                                                                       └─► submit ─► END
+
+`guardrails` (A4) scans untrusted descriptions before the LLM; `intake` (A2) may
+`interrupt()` to clarify low-confidence categorisations with the human.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from mtd_agent import guardrails
 from mtd_agent.audit import AuditLogger
 from mtd_agent.interfaces import HmrcVatClient
 from mtd_agent.models import ObligationStatus, VatReturnPayload
@@ -64,6 +68,21 @@ def _ingest(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     return {"txns": txns}
 
 
+def _guardrails(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
+    """A4 — scan transaction descriptions (untrusted text) before the LLM sees them.
+
+    Redacts PII and neutralises injection attempts; the sanitised text replaces the
+    description that flows into `extract`, while the original stays in `txn.raw`. This
+    treats descriptions as data, not instructions (CONTRACT §8 A4)."""
+    safe, findings = guardrails.scan_transactions(state["txns"])
+    audit = _audit(config)
+    if findings:
+        audit.emit("guardrails_flagged", {"findings": [f.model_dump() for f in findings]})
+    else:
+        audit.emit("guardrails_ok", {"scanned": len(state["txns"])})
+    return {"txns": safe}
+
+
 def _extract(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     categorised = extract.categorise(state["txns"], _deps(config).categoriser)
     _audit(config).emit("extract", {"categorised": [
@@ -81,6 +100,8 @@ def _intake(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     only changes a *label* — never a figure (CONTRACT.md §8 A1)."""
     gaps = intake.detect_gaps(state["categorised"])
     if not gaps:
+        # The agent ran and had nothing to ask — audit that too (CONTRACT §8 A6).
+        _audit(config).emit("intake_no_questions", {"considered": len(state["categorised"])})
         return {}
     # Resume value is wrapped ({"answers": ...}) so it is always truthy — LangGraph
     # ignores a falsy Command(resume=...), and "keep all" is legitimately empty.
@@ -88,7 +109,12 @@ def _intake(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     answers: dict[str, str] = resumed.get("answers", {})
     updated, changed = intake.apply_answers(state["categorised"], answers)
     result = intake.IntakeResult(asked=[g.txn_id for g in gaps], answers=answers, changed=changed)
-    _audit(config).emit("intake_clarified", {"asked": result.asked, "changed": result.changed})
+    # A3: record every question *and* answer, not just which ids were asked/changed.
+    _audit(config).emit("intake_clarified", {
+        "asked": result.asked,
+        "changed": result.changed,
+        "qa": intake.clarification_log(gaps, answers, changed),
+    })
     return {"categorised": updated, "intake": result}
 
 
@@ -170,6 +196,7 @@ def build_pipeline_graph():
     via config); a checkpointer is added in A2 when HITL interrupts land."""
     g = StateGraph(GraphState)
     g.add_node("ingest", _ingest)
+    g.add_node("guardrails", _guardrails)
     g.add_node("extract", _extract)
     g.add_node("intake", _intake)
     g.add_node("completeness", _completeness)
@@ -179,7 +206,8 @@ def build_pipeline_graph():
     g.add_node("submit", _submit)
 
     g.add_edge(START, "ingest")
-    g.add_edge("ingest", "extract")
+    g.add_edge("ingest", "guardrails")
+    g.add_edge("guardrails", "extract")
     g.add_edge("extract", "intake")
     g.add_edge("intake", "completeness")
     g.add_conditional_edges("completeness", _after_completeness, {"compute": "compute", "end": END})

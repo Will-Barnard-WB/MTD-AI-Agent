@@ -80,6 +80,33 @@ def apply_answers(
     return out, changed
 
 
+def clarification_log(
+    gaps: list[Gap],
+    answers: dict[str, str],
+    changed: list[str],
+) -> list[dict]:
+    """Structured question/answer record for the audit trail (A3, CONTRACT §8 A6).
+
+    One entry per gap: the exact question put to the human, their raw answer, and the
+    outcome (kept the suggestion vs changed it, with from→to treatment). This is the
+    record that lets an accountant see *what was asked and how it was resolved* — no
+    figure is ever recorded here, only labels (A1)."""
+    changed_set = set(changed)
+    log: list[dict] = []
+    for g in gaps:
+        raw = (answers.get(g.txn_id) or "").strip().lower()
+        was_changed = g.txn_id in changed_set
+        log.append({
+            "txn_id": g.txn_id,
+            "question": g.prompt,
+            "answer": raw,
+            "outcome": "changed" if was_changed else "kept",
+            "from": g.suggested.value,
+            "to": raw if was_changed else g.suggested.value,
+        })
+    return log
+
+
 class Questioner(Protocol):
     """Answers a batch of clarification gaps → {txn_id: treatment value}."""
 

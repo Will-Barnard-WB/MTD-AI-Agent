@@ -12,7 +12,12 @@ from mtd_agent.hmrc.fake_client import FakeHmrcVatClient
 from mtd_agent.models import CategorisedTransaction, Direction, Transaction, VatTreatment
 from mtd_agent.nodes.approval import AutoApprover
 from mtd_agent.nodes.extract import TxnCategory
-from mtd_agent.nodes.intake import AutoQuestioner, apply_answers, detect_gaps
+from mtd_agent.nodes.intake import (
+    AutoQuestioner,
+    apply_answers,
+    clarification_log,
+    detect_gaps,
+)
 
 EXAMPLE_CSV = Path(__file__).resolve().parents[1] / "examples" / "sample_transactions.csv"
 
@@ -43,6 +48,20 @@ def test_apply_answers_keeps_on_empty_or_same():
     assert apply_answers(cats, {"A": "standard"})[1] == []  # same treatment = no change
 
 
+def test_clarification_log_records_question_and_answer():
+    gaps = detect_gaps([_cat("A", VatTreatment.STANDARD, 0.4),
+                        _cat("B", VatTreatment.STANDARD, 0.4)])
+    _, changed = apply_answers([_cat("A", VatTreatment.STANDARD, 0.4)], {"A": "zero"})
+    log = clarification_log(gaps, {"A": "zero"}, changed)
+
+    by_id = {e["txn_id"]: e for e in log}
+    assert "desc A" in by_id["A"]["question"]          # the actual question is recorded
+    assert by_id["A"]["outcome"] == "changed"
+    assert (by_id["A"]["from"], by_id["A"]["to"]) == ("standard", "zero")
+    assert by_id["B"]["outcome"] == "kept"             # unanswered gap kept as suggested
+    assert by_id["B"]["from"] == by_id["B"]["to"] == "standard"
+
+
 class _LowConfS1:
     """Marks S1 uncertain (triggers intake); everything else standard/confident."""
 
@@ -68,8 +87,15 @@ def test_intake_override_changes_the_return(tmp_path):
     # S1 is a £1200 standard sale → £200 VAT; zero-rating it drops Box 1 by exactly £200.
     assert keep.boxes.box1_vat_due_sales - override.boxes.box1_vat_due_sales == Decimal("200.00")
 
-    steps = [e.step for e in AuditLogger(override.run_id, tmp_path).read_all()]
+    events = AuditLogger(override.run_id, tmp_path).read_all()
+    steps = [e.step for e in events]
     assert "intake_clarified" in steps
+    # A3: the full question/answer is in the audit trail, not just which ids were asked.
+    clarified = next(e for e in events if e.step == "intake_clarified")
+    qa = {e["txn_id"]: e for e in clarified.payload["qa"]}
+    assert qa["S1"]["outcome"] == "changed"
+    assert (qa["S1"]["from"], qa["S1"]["to"]) == ("standard", "zero")
+    assert qa["S1"]["question"]  # a real question string was recorded
 
 
 def test_no_gaps_means_no_interrupt(tmp_path):
@@ -84,3 +110,5 @@ def test_no_gaps_means_no_interrupt(tmp_path):
     assert result.status == Status.SUBMITTED
     steps = [e.step for e in AuditLogger(result.run_id, tmp_path).read_all()]
     assert "intake_clarified" not in steps
+    # The agent still ran and audited that it had nothing to ask (CONTRACT §8 A6).
+    assert "intake_no_questions" in steps
