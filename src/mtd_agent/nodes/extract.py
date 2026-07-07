@@ -28,6 +28,8 @@ class TxnCategory(BaseModel):
     category: str = Field(description="Bookkeeping category, e.g. 'fuel', 'rent'.")
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
+    needs_review: bool = False   # the model's explicit "I'm not sure" self-flag
+    candidates: list[VatTreatment] = Field(default_factory=list)  # plausible alternatives
 
 
 class Categoriser(Protocol):
@@ -49,6 +51,8 @@ def categorise(txns: list[Transaction], categoriser: Categoriser) -> list[Catego
                 category=cat.category,
                 confidence=cat.confidence,
                 reasoning=cat.reasoning,
+                needs_review=cat.needs_review,
+                candidates=cat.candidates,
             )
         )
     return out
@@ -64,7 +68,12 @@ _SYSTEM = (
     "classify. Treatments: 'standard' (20%), 'reduced' (5%), 'zero' (0% e.g. most food, "
     "books, public transport), 'exempt' (e.g. insurance, rent of residential property, "
     "financial services), 'outside_scope' (e.g. salaries/wages, dividends, transfers). "
-    "Give a confidence in [0,1] and one short sentence of reasoning."
+    "Give one short sentence of reasoning. "
+    "Set 'needs_review' to true whenever the transaction could plausibly take more than one "
+    "treatment, the description is too vague to be sure, or it is an edge case you would want "
+    "a human to confirm — do NOT default to false just to seem confident. When 'needs_review' "
+    "is true, list the plausible treatments in 'candidates' (otherwise leave it empty). "
+    "Also give a confidence in [0,1] as a secondary signal."
 )
 
 _SCHEMA = {
@@ -77,7 +86,8 @@ _SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["id", "treatment", "category", "confidence", "reasoning"],
+                "required": ["id", "treatment", "category", "confidence", "reasoning",
+                             "needs_review", "candidates"],
                 "properties": {
                     "id": {"type": "string"},
                     "treatment": {
@@ -87,6 +97,11 @@ _SCHEMA = {
                     "category": {"type": "string"},
                     "confidence": {"type": "number"},
                     "reasoning": {"type": "string"},
+                    "needs_review": {"type": "boolean"},
+                    "candidates": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": [t.value for t in VatTreatment]},
+                    },
                 },
             },
         }
@@ -176,5 +191,6 @@ class FakeCategoriser:
                 id=t.id, treatment=treatment,
                 category=desc.split()[0] if desc else "uncategorised",
                 confidence=confidence, reasoning=reasoning,
+                needs_review=not matched,   # honest: flag the guesses for a human
             ))
         return out

@@ -16,7 +16,8 @@ from mtd_agent.nodes.extract import TxnCategory, categorise
 
 def test_llm_output_type_has_no_money_field():
     fields = set(TxnCategory.model_fields)
-    assert fields == {"id", "treatment", "category", "confidence", "reasoning"}
+    assert fields == {"id", "treatment", "category", "confidence", "reasoning",
+                      "needs_review", "candidates"}
     money_like = {"amount", "vat", "net", "total", "gross", "figure", "box"}
     assert not (fields & money_like)
 

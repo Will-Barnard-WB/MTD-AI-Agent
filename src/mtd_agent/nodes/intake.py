@@ -84,6 +84,9 @@ def detect_gaps(categorised: list[CategorisedTransaction]) -> list[Gap]:
     gaps: list[Gap] = []
     for c in categorised:
         reasons = ambiguity_reasons(c.txn.description)
+        if c.needs_review:   # the model's explicit self-flag (primary signal)
+            cand = f" (candidates: {', '.join(t.value for t in c.candidates)})" if c.candidates else ""
+            reasons.append(f"model flagged for review{cand}")
         if c.confidence < _LOW_CONFIDENCE:
             reasons.append(f"low confidence ({c.confidence:.2f})")
         if reasons:
