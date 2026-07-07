@@ -29,8 +29,10 @@ from langgraph.types import interrupt
 
 from mtd_agent import guardrails
 from mtd_agent.audit import AuditLogger
+from decimal import Decimal
+
 from mtd_agent.interfaces import HmrcVatClient
-from mtd_agent.models import ObligationStatus, VatReturnPayload
+from mtd_agent.models import ObligationStatus, VatReturnPayload, VatScheme
 from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
 from mtd_agent.nodes.approval import Approver, build_derivation
 from mtd_agent.nodes.extract import Categoriser
@@ -57,6 +59,15 @@ def _deps(config: RunnableConfig) -> Deps:
 
 def _audit(config: RunnableConfig) -> AuditLogger:
     return config["configurable"]["audit"]
+
+
+def _scheme(config: RunnableConfig) -> VatScheme:
+    return config["configurable"].get("scheme", VatScheme.STANDARD)
+
+
+def _flat_rate_percent(config: RunnableConfig) -> Decimal | None:
+    pct = config["configurable"].get("flat_rate_percent")
+    return Decimal(str(pct)) if pct is not None else None
 
 
 # --------------------------------------------------------------------------- #
@@ -134,8 +145,20 @@ def _completeness(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
 
 
 def _compute(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
-    boxes = compute_vat.compute_vat(state["categorised"])
-    _audit(config).emit("compute_vat", boxes.model_dump(mode="json"))
+    """Route to the pure compute for the business's VAT scheme (Phase B). The router
+    picks the path; every path is pure and still faces the HITL gate (CONTRACT §8 A2)."""
+    scheme = _scheme(config)
+    cats = state["categorised"]
+    if scheme == VatScheme.FLAT_RATE:
+        pct = _flat_rate_percent(config)
+        if pct is None:
+            raise ValueError("flat_rate scheme requires flat_rate_percent")
+        boxes = compute_vat.compute_vat_flat_rate(cats, pct)
+    elif scheme == VatScheme.CASH:
+        boxes = compute_vat.compute_vat_cash(cats)
+    else:
+        boxes = compute_vat.compute_vat(cats)
+    _audit(config).emit("compute_vat", {**boxes.model_dump(mode="json"), "scheme": scheme.value})
     return {"boxes": boxes}
 
 

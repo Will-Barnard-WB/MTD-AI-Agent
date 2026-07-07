@@ -28,6 +28,17 @@ class Direction(str, Enum):
     PURCHASE = "purchase"
 
 
+class VatScheme(str, Enum):
+    """The VAT accounting scheme a business is registered under (Phase B).
+
+    Determines which pure compute function the pipeline routes to — the supervisor
+    picks the scheme, but a pure, gated computation still produces every figure."""
+
+    STANDARD = "standard"      # accrual, invoice-dated
+    FLAT_RATE = "flat_rate"    # fixed % of gross turnover, no input reclaim
+    CASH = "cash"              # accounted on payments (our bank-txn input is already cash-basis)
+
+
 class VatTreatment(str, Enum):
     """The VAT treatment the LLM assigns to a transaction.
 
