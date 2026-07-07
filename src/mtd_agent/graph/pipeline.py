@@ -28,6 +28,7 @@ from mtd_agent.interfaces import HmrcVatClient
 from mtd_agent.nodes.approval import Approver
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.nodes.intake import AutoQuestioner, Gap, Questioner
+from mtd_agent.reviewer import Reviewer, SkillSet
 
 
 def run_pipeline(
@@ -38,16 +39,19 @@ def run_pipeline(
     categoriser: Categoriser,
     approver: Approver,
     questioner: Questioner | None = None,
+    reviewer: Reviewer | None = None,
+    tax_year: str = "2026-27",
     finalised: bool = True,
     period_key: str | None = None,
     audit_dir: Path | None = None,
 ) -> PipelineResult:
     questioner = questioner or AutoQuestioner()
+    reviewer = reviewer or Reviewer(SkillSet.load(tax_year))
     run_id = uuid.uuid4().hex[:12]
     audit = AuditLogger(run_id) if audit_dir is None else AuditLogger(run_id, audit_dir)
 
     config = {"configurable": {
-        "deps": Deps(client=client, categoriser=categoriser, approver=approver),
+        "deps": Deps(client=client, categoriser=categoriser, approver=approver, reviewer=reviewer),
         "audit": audit,
         "run_id": run_id,
         "thread_id": run_id,   # required by the checkpointer

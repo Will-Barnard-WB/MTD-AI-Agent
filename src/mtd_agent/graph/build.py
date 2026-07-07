@@ -34,6 +34,7 @@ from mtd_agent.models import ObligationStatus, VatReturnPayload
 from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
 from mtd_agent.nodes.approval import Approver, build_derivation
 from mtd_agent.nodes.extract import Categoriser
+from mtd_agent.reviewer.reviewer import Reviewer
 from mtd_agent.graph.state import GraphState, Status
 
 # HMRC caps the obligations query window at 366 days — keep it legal.
@@ -47,6 +48,7 @@ class Deps:
     client: HmrcVatClient
     categoriser: Categoriser
     approver: Approver
+    reviewer: Reviewer
 
 
 def _deps(config: RunnableConfig) -> Deps:
@@ -155,7 +157,11 @@ def _resolve_period(state: GraphState, config: RunnableConfig) -> dict[str, Any]
 
 def _approval(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     audit = _audit(config)
-    derivation = build_derivation(state["boxes"], state["categorised"])
+    # Phase C2: read-only reviewer produces cited comments shown in the approval view.
+    comments = _deps(config).reviewer.review(state["categorised"])
+    if comments:
+        audit.emit("reviewed", {"comments": [c.model_dump() for c in comments]})
+    derivation = build_derivation(state["boxes"], state["categorised"], comments)
     if not _deps(config).approver.approve(derivation):
         audit.emit("declined", {"period_key": state["period_key"]})
         return {"status": Status.DECLINED}
