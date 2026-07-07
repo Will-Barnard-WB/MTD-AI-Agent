@@ -98,6 +98,45 @@ def scan_description(text: str) -> ScanResult:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Output guardrails (§4.3) — an agent may comment/route, never emit a figure or a
+# box-mutation instruction (CONTRACT §8 A1, A2). Defence in depth: the core already
+# guarantees no agent figure reaches HMRC; this protects the *decision* surface too,
+# so even a future LLM-backed reviewer cannot slip a figure into the approval view.
+# --------------------------------------------------------------------------- #
+
+_MONEY = re.compile(r"£\s?\d")
+_BOX_ASSIGN = re.compile(r"\bbox\s*\d\s*=", re.IGNORECASE)
+_BOX_DIRECTIVE = re.compile(r"\b(?:set|change|make|force|override)\b[^.\n]{0,24}\bbox\s*\d",
+                            re.IGNORECASE)
+
+
+def comment_violations(text: str) -> list[str]:
+    """Ways an advisory comment would overstep — carry a figure or direct a box change."""
+    v: list[str] = []
+    if _MONEY.search(text):
+        v.append("contains a monetary figure")
+    if _BOX_ASSIGN.search(text) or _BOX_DIRECTIVE.search(text):
+        v.append("box-mutation directive")
+    return v
+
+
+def enforce_advisory(comments: list) -> tuple[list, list[str]]:
+    """Keep only comments that are grounded (cited) and purely advisory (no figure, no
+    box-change directive). Returns (kept, dropped_notes). Fail-safe: a violating comment
+    is dropped, not shown to the approver — an agent never gets to assert a figure."""
+    kept, dropped = [], []
+    for c in comments:
+        problems = comment_violations(c.message)
+        if not c.citation:
+            problems.append("ungrounded (no citation)")
+        if problems:
+            dropped.append(f"{c.citation or '?'}: {', '.join(problems)}")
+        else:
+            kept.append(c)
+    return kept, dropped
+
+
 def scan_transactions(
     txns: list[Transaction],
 ) -> tuple[list[Transaction], list[TxnScan]]:

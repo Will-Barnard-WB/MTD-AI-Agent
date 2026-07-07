@@ -184,7 +184,12 @@ def _resolve_period(state: GraphState, config: RunnableConfig) -> dict[str, Any]
 def _approval(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     audit = _audit(config)
     # Phase C2: read-only reviewer produces cited comments shown in the approval view.
+    # Output guardrail (hardening): drop any comment that isn't grounded + purely advisory,
+    # so no agent can slip a figure or box-change instruction into the approval view.
     comments = _deps(config).reviewer.review(state["categorised"])
+    comments, dropped = guardrails.enforce_advisory(comments)
+    if dropped:
+        audit.emit("reviewer_guardrail", {"dropped": dropped})
     if comments:
         audit.emit("reviewed", {"comments": [c.model_dump() for c in comments]})
     derivation = build_derivation(state["boxes"], state["categorised"], comments)
