@@ -59,8 +59,8 @@ class CategorisedTransaction(BaseModel):
     """A Transaction plus the LLM's classification.
 
     SAFETY: the model contributes only `treatment`, `category`, `confidence`,
-    `reasoning`. It contributes NO monetary figure. compute_vat derives every
-    number from `txn.amount` + `treatment`.
+    `reasoning`, `needs_review`, `candidates` — all labels/signals, NO monetary
+    figure. compute_vat derives every number from `txn.amount` + `treatment`.
     """
 
     txn: Transaction
@@ -68,6 +68,10 @@ class CategorisedTransaction(BaseModel):
     category: str = Field(description="Human-readable bookkeeping category, e.g. 'fuel', 'rent'.")
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = Field(default="", description="Short why, surfaced in the approval view.")
+    needs_review: bool = Field(default=False, description="The model's explicit 'I'm not "
+                               "sure' flag — a cleaner self-signal than the numeric confidence.")
+    candidates: list[VatTreatment] = Field(default_factory=list, description="Plausible "
+                                           "alternative treatments when unsure — shown to the human.")
 
 
 # --------------------------------------------------------------------------- #

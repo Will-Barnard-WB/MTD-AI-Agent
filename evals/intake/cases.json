@@ -49,5 +49,15 @@
       {"id": "T3", "description": "Bank line, no memo", "treatment": "exempt", "confidence": 0.4}
     ],
     "should_flag": ["T1", "T2", "T3"]
+  },
+  {
+    "name": "confidently_wrong",
+    "note": "The calibration case: the model is HIGH-confidence, but the descriptions are objectively ambiguous (opaque, or cueing two treatments). A confidence-only detector would wave these through; the ambiguity heuristic must still flag them.",
+    "txns": [
+      {"id": "C1", "description": "Payment", "treatment": "standard", "confidence": 0.95},
+      {"id": "C2", "description": "Train tickets and insurance excess rebilled to client", "treatment": "standard", "confidence": 0.9},
+      {"id": "C3", "description": "Consulting fee for Q1 project", "treatment": "standard", "confidence": 0.93}
+    ],
+    "should_flag": ["C1", "C2"]
   }
 ]

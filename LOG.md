@@ -2,6 +2,22 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-07] v2 Session 1 | Intake calibration — the dormant HITL gate is now live
+Fixed the dormant intake gate (FakeCategoriser hardcoded 0.9; gpt-4o-mini overconfident, so
+`detect_gaps` <0.6 never fired). Two complementary layers, for two failure modes:
+- **Explicit `needs_review` self-flag** (+ `candidates`) replaces the arbitrary numeric score as the
+  primary signal — the model says "I'm unsure" and lists plausible treatments (Fake flags its
+  default guesses; OpenAI prompt/schema updated; real-model behaviour pending a live `--real-llm`).
+  Catches what the model *knows* it's shaky on.
+- **Provider-independent ambiguity heuristic** in `detect_gaps` (`extract.matched_treatments` +
+  opaque-description check) — flags objectively-hard transactions (opaque/generic, or conflicting
+  cues) regardless of confidence. Catches what the model is *confidently wrong* about.
+Gaps carry `reasons` (surfaced in the question + audited in `intake_clarified.qa`). FakeCategoriser
+now reports honest confidence (0.9 matched / 0.35 guess) so intake fires offline (verified: sample
+CSV flags S1+P1). New eval case `confidently_wrong`; 67 tests green, eval 100%, ruff clean.
+**Deferred:** OpenAI logprobs (self-report shares the confidently-wrong blind spot, so the explicit
+flag + heuristic supersede it). **Next: Session 2** — Skills KB + real-time reviewer (Phase C1+C2).
+
 ## [2026-07-06] v2 A4 | Input guardrails (PII redaction + injection neutralisation) — Phase A DONE
 New `src/mtd_agent/guardrails.py`: a pure, deterministic regex scanner that runs as a graph node
 **between `ingest` and `extract`** (`ingest → guardrails → extract → …`). It **redacts PII**

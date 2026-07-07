@@ -28,6 +28,8 @@ class TxnCategory(BaseModel):
     category: str = Field(description="Bookkeeping category, e.g. 'fuel', 'rent'.")
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
+    needs_review: bool = False   # the model's explicit "I'm not sure" self-flag
+    candidates: list[VatTreatment] = Field(default_factory=list)  # plausible alternatives
 
 
 class Categoriser(Protocol):
@@ -49,6 +51,8 @@ def categorise(txns: list[Transaction], categoriser: Categoriser) -> list[Catego
                 category=cat.category,
                 confidence=cat.confidence,
                 reasoning=cat.reasoning,
+                needs_review=cat.needs_review,
+                candidates=cat.candidates,
             )
         )
     return out
@@ -64,7 +68,12 @@ _SYSTEM = (
     "classify. Treatments: 'standard' (20%), 'reduced' (5%), 'zero' (0% e.g. most food, "
     "books, public transport), 'exempt' (e.g. insurance, rent of residential property, "
     "financial services), 'outside_scope' (e.g. salaries/wages, dividends, transfers). "
-    "Give a confidence in [0,1] and one short sentence of reasoning."
+    "Give one short sentence of reasoning. "
+    "Set 'needs_review' to true whenever the transaction could plausibly take more than one "
+    "treatment, the description is too vague to be sure, or it is an edge case you would want "
+    "a human to confirm — do NOT default to false just to seem confident. When 'needs_review' "
+    "is true, list the plausible treatments in 'candidates' (otherwise leave it empty). "
+    "Also give a confidence in [0,1] as a secondary signal."
 )
 
 _SCHEMA = {
@@ -77,7 +86,8 @@ _SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["id", "treatment", "category", "confidence", "reasoning"],
+                "required": ["id", "treatment", "category", "confidence", "reasoning",
+                             "needs_review", "candidates"],
                 "properties": {
                     "id": {"type": "string"},
                     "treatment": {
@@ -87,6 +97,11 @@ _SCHEMA = {
                     "category": {"type": "string"},
                     "confidence": {"type": "number"},
                     "reasoning": {"type": "string"},
+                    "needs_review": {"type": "boolean"},
+                    "candidates": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": [t.value for t in VatTreatment]},
+                    },
                 },
             },
         }
@@ -138,9 +153,23 @@ _KEYWORD_RULES: list[tuple[tuple[str, ...], VatTreatment]] = [
 ]
 
 
+def matched_treatments(description: str) -> set[VatTreatment]:
+    """Which VAT treatments the offline keyword rules cue for a description.
+
+    Provider-independent — used by intake's ambiguity heuristic (a description that
+    cues *two* different treatments is objectively worth a human check, whatever the
+    model's self-reported confidence)."""
+    desc = description.lower()
+    return {mapped for keywords, mapped in _KEYWORD_RULES if any(k in desc for k in keywords)}
+
+
 class FakeCategoriser:
     """Deterministic, network-free categoriser. NOT for production accuracy —
-    a stand-in so the pipeline (and the demo) runs without spending LLM credits."""
+    a stand-in so the pipeline (and the demo) runs without spending LLM credits.
+
+    Reports *honest* confidence: high when a keyword rule fired, low when it fell
+    through to the default (a genuine guess). This is what lets intake fire offline
+    — a fixed 0.9 made the clarification gate dormant."""
 
     def __init__(self, default: VatTreatment = VatTreatment.STANDARD) -> None:
         self._default = default
@@ -149,14 +178,19 @@ class FakeCategoriser:
         out: list[TxnCategory] = []
         for t in txns:
             desc = t.description.lower()
-            treatment = self._default
+            treatment, matched = self._default, False
             for keywords, mapped in _KEYWORD_RULES:
                 if any(k in desc for k in keywords):
-                    treatment = mapped
+                    treatment, matched = mapped, True
                     break
+            if matched:
+                confidence, reasoning = 0.9, "keyword-rule (offline fake)"
+            else:
+                confidence, reasoning = 0.35, "no keyword rule matched — default guess (offline fake)"
             out.append(TxnCategory(
                 id=t.id, treatment=treatment,
                 category=desc.split()[0] if desc else "uncategorised",
-                confidence=0.9, reasoning="keyword-rule (offline fake)",
+                confidence=confidence, reasoning=reasoning,
+                needs_review=not matched,   # honest: flag the guesses for a human
             ))
         return out
