@@ -1,0 +1,60 @@
+[
+  {
+    "name": "fuel_as_standard",
+    "note": "Classic confidently-wrong: domestic fuel is reduced-rated, not standard.",
+    "description": "Reduced-rate domestic fuel bill",
+    "treatment": "standard",
+    "should_flag": true,
+    "expect_citation": "vat-rates#reduced"
+  },
+  {
+    "name": "fuel_as_reduced_ok",
+    "description": "Reduced-rate domestic fuel bill",
+    "treatment": "reduced",
+    "should_flag": false
+  },
+  {
+    "name": "insurance_as_standard",
+    "note": "Insurance is exempt, not standard.",
+    "description": "Professional indemnity insurance premium",
+    "treatment": "standard",
+    "should_flag": true,
+    "expect_citation": "vat-scope#exempt"
+  },
+  {
+    "name": "insurance_as_exempt_ok",
+    "description": "Professional indemnity insurance premium",
+    "treatment": "exempt",
+    "should_flag": false
+  },
+  {
+    "name": "train_as_standard",
+    "note": "Public transport is zero-rated.",
+    "description": "Train fare London to Leeds",
+    "treatment": "standard",
+    "should_flag": true,
+    "expect_citation": "vat-rates#zero"
+  },
+  {
+    "name": "salary_as_standard",
+    "note": "Wages are outside the scope of VAT entirely.",
+    "description": "Monthly staff salary payment",
+    "treatment": "standard",
+    "should_flag": true,
+    "expect_citation": "vat-scope#outside-scope"
+  },
+  {
+    "name": "consulting_ok",
+    "note": "Correctly standard-rated; the KB should say nothing.",
+    "description": "Consulting fee for Q1 delivery",
+    "treatment": "standard",
+    "should_flag": false
+  },
+  {
+    "name": "opaque_no_false_positive",
+    "note": "No KB keyword matches — the reviewer must stay silent, not guess.",
+    "description": "Payment ref 88213",
+    "treatment": "standard",
+    "should_flag": false
+  }
+]

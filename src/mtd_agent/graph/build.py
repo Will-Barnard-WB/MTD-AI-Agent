@@ -29,11 +29,14 @@ from langgraph.types import interrupt
 
 from mtd_agent import guardrails
 from mtd_agent.audit import AuditLogger
+from decimal import Decimal
+
 from mtd_agent.interfaces import HmrcVatClient
-from mtd_agent.models import ObligationStatus, VatReturnPayload
+from mtd_agent.models import ObligationStatus, VatReturnPayload, VatScheme
 from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
 from mtd_agent.nodes.approval import Approver, build_derivation
 from mtd_agent.nodes.extract import Categoriser
+from mtd_agent.reviewer.reviewer import Reviewer
 from mtd_agent.graph.state import GraphState, Status
 
 # HMRC caps the obligations query window at 366 days — keep it legal.
@@ -47,6 +50,7 @@ class Deps:
     client: HmrcVatClient
     categoriser: Categoriser
     approver: Approver
+    reviewer: Reviewer
 
 
 def _deps(config: RunnableConfig) -> Deps:
@@ -55,6 +59,15 @@ def _deps(config: RunnableConfig) -> Deps:
 
 def _audit(config: RunnableConfig) -> AuditLogger:
     return config["configurable"]["audit"]
+
+
+def _scheme(config: RunnableConfig) -> VatScheme:
+    return config["configurable"].get("scheme", VatScheme.STANDARD)
+
+
+def _flat_rate_percent(config: RunnableConfig) -> Decimal | None:
+    pct = config["configurable"].get("flat_rate_percent")
+    return Decimal(str(pct)) if pct is not None else None
 
 
 # --------------------------------------------------------------------------- #
@@ -85,8 +98,11 @@ def _guardrails(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
 
 def _extract(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     categorised = extract.categorise(state["txns"], _deps(config).categoriser)
+    # Record the (already guardrail-sanitised) description too, so a run can be re-reviewed
+    # from its audit trail alone (batch reviewer, Phase C3).
     _audit(config).emit("extract", {"categorised": [
-        {"id": c.txn.id, "treatment": c.treatment.value, "confidence": c.confidence}
+        {"id": c.txn.id, "description": c.txn.description,
+         "treatment": c.treatment.value, "confidence": c.confidence}
         for c in categorised
     ]})
     return {"categorised": categorised}
@@ -129,8 +145,20 @@ def _completeness(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
 
 
 def _compute(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
-    boxes = compute_vat.compute_vat(state["categorised"])
-    _audit(config).emit("compute_vat", boxes.model_dump(mode="json"))
+    """Route to the pure compute for the business's VAT scheme (Phase B). The router
+    picks the path; every path is pure and still faces the HITL gate (CONTRACT §8 A2)."""
+    scheme = _scheme(config)
+    cats = state["categorised"]
+    if scheme == VatScheme.FLAT_RATE:
+        pct = _flat_rate_percent(config)
+        if pct is None:
+            raise ValueError("flat_rate scheme requires flat_rate_percent")
+        boxes = compute_vat.compute_vat_flat_rate(cats, pct)
+    elif scheme == VatScheme.CASH:
+        boxes = compute_vat.compute_vat_cash(cats)
+    else:
+        boxes = compute_vat.compute_vat(cats)
+    _audit(config).emit("compute_vat", {**boxes.model_dump(mode="json"), "scheme": scheme.value})
     return {"boxes": boxes}
 
 
@@ -155,7 +183,16 @@ def _resolve_period(state: GraphState, config: RunnableConfig) -> dict[str, Any]
 
 def _approval(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     audit = _audit(config)
-    derivation = build_derivation(state["boxes"], state["categorised"])
+    # Phase C2: read-only reviewer produces cited comments shown in the approval view.
+    # Output guardrail (hardening): drop any comment that isn't grounded + purely advisory,
+    # so no agent can slip a figure or box-change instruction into the approval view.
+    comments = _deps(config).reviewer.review(state["categorised"])
+    comments, dropped = guardrails.enforce_advisory(comments)
+    if dropped:
+        audit.emit("reviewer_guardrail", {"dropped": dropped})
+    if comments:
+        audit.emit("reviewed", {"comments": [c.model_dump() for c in comments]})
+    derivation = build_derivation(state["boxes"], state["categorised"], comments)
     if not _deps(config).approver.approve(derivation):
         audit.emit("declined", {"period_key": state["period_key"]})
         return {"status": Status.DECLINED}

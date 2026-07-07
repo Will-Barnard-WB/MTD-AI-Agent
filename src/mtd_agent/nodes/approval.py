@@ -13,6 +13,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from mtd_agent.models import CategorisedTransaction, VatBoxes, VatTreatment
+from mtd_agent.reviewer.reviewer import ReviewComment
 
 _LOW_CONFIDENCE = 0.6
 _LARGE_AMOUNT = Decimal("10000")
@@ -26,6 +27,7 @@ class Derivation(BaseModel):
     box4_sources: list[str]      # txns contributing VAT reclaimed
     excluded: list[str]          # outside-scope txns, surfaced not hidden
     anomalies: list[str]
+    review_comments: list[ReviewComment] = []   # advisory, cited (Phase C2)
 
 
 def _line(c: CategorisedTransaction) -> str:
@@ -45,7 +47,11 @@ def detect_anomalies(categorised: list[CategorisedTransaction]) -> list[str]:
     return flags
 
 
-def build_derivation(boxes: VatBoxes, categorised: list[CategorisedTransaction]) -> Derivation:
+def build_derivation(
+    boxes: VatBoxes,
+    categorised: list[CategorisedTransaction],
+    review_comments: list[ReviewComment] | None = None,
+) -> Derivation:
     vatable = (VatTreatment.STANDARD, VatTreatment.REDUCED)
     return Derivation(
         boxes=boxes,
@@ -55,6 +61,7 @@ def build_derivation(boxes: VatBoxes, categorised: list[CategorisedTransaction])
                       if c.txn.direction.value == "purchase" and c.treatment in vatable],
         excluded=[_line(c) for c in categorised if c.treatment == VatTreatment.OUTSIDE_SCOPE],
         anomalies=detect_anomalies(categorised),
+        review_comments=review_comments or [],
     )
 
 
@@ -84,6 +91,9 @@ def render(d: Derivation) -> str:
         lines += ["Excluded (outside scope):", *[f"  {s}" for s in d.excluded]]
     if d.anomalies:
         lines += ["", "⚠ ANOMALIES:", *[f"  {a}" for a in d.anomalies]]
+    if d.review_comments:
+        lines += ["", "🔎 REVIEWER (advisory — a second opinion, cites HMRC rules):"]
+        lines += [f"  [{c.severity}] {c.message}  [skill: {c.citation}]" for c in d.review_comments]
     return "\n".join(lines)
 
 

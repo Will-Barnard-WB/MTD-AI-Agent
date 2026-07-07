@@ -1,0 +1,10 @@
+[
+  {"name": "flat_rate_named", "profile": "Sole trader on the VAT Flat Rate Scheme, 14.5%", "expected": "flat_rate"},
+  {"name": "frs_abbrev", "profile": "Registered under FRS since 2024", "expected": "flat_rate"},
+  {"name": "cash_named", "profile": "We use cash accounting for VAT", "expected": "cash"},
+  {"name": "cash_basis", "profile": "VAT on a cash basis", "expected": "cash"},
+  {"name": "standard_named", "profile": "Standard VAT scheme, accrual", "expected": "standard"},
+  {"name": "conflicting_asks", "profile": "flat rate and cash accounting both mentioned", "expected": null},
+  {"name": "no_signal_asks", "profile": "A small consultancy in Bristol", "expected": null},
+  {"name": "empty_asks", "profile": "", "expected": null}
+]

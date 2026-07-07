@@ -2,6 +2,25 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-07] v2 Sessions 2–5 | Phase C (reviewer+skills), Phase B (schemes), hardening — v2 DONE
+Built the rest of v2 in one block (96 tests green, ruff clean):
+- **Session 2 (C1+C2):** versioned skills KB `skills/hmrc/2026-27/*.md` (anchored, citable rules) +
+  `reviewer/` — a read-only-by-construction reviewer emitting grounded, **cited** comments, wired
+  into the approval view (`reviewed` audit event). Catches confidently-wrong via independent rules
+  (e.g. fuel-as-standard → `[skill: vat-rates#reduced]`).
+- **Session 3 (C3+C4):** `cli review` batch sweep over audit logs (extract event now records the
+  sanitised description so runs re-review from the trail alone) + reviewer eval (100% precision/
+  recall, citation-checked; false positives held at zero).
+- **Session 4 (Phase B):** pure `compute_vat_flat_rate` + `compute_vat_cash`; `classify_scheme`
+  supervisor router (standard/flat-rate/cash, **asks when unsure**); compute node routes on scheme
+  (via run config); routing eval 100% accuracy + 100% asks-when-unsure.
+- **Session 5 (hardening):** output guardrails — `enforce_advisory` drops any reviewer comment that
+  carries a figure or a box-mutation directive or is ungrounded (`reviewer_guardrail` audit); a
+  structural test proves **submit is only reachable via approval** (no gate bypass); adversarial
+  guardrails eval (PII + injection variants + clean controls) all pass.
+Eval harnesses now: intake, reviewer, routing, guardrails (+ core). Deferred non-goals stand (ITSA,
+RAG, multi-tenant, production recognition). **v2 roadmap complete.** Next track: the dashboard.
+
 ## [2026-07-07] v2 Session 1 | Intake calibration — the dormant HITL gate is now live
 Fixed the dormant intake gate (FakeCategoriser hardcoded 0.9; gpt-4o-mini overconfident, so
 `detect_gaps` <0.6 never fired). Two complementary layers, for two failure modes:

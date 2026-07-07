@@ -17,6 +17,7 @@ blocking callback.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
 from langgraph.types import Command
@@ -25,9 +26,11 @@ from mtd_agent.audit import AuditLogger
 from mtd_agent.graph.build import PIPELINE_GRAPH, Deps
 from mtd_agent.graph.state import PipelineResult
 from mtd_agent.interfaces import HmrcVatClient
+from mtd_agent.models import VatScheme
 from mtd_agent.nodes.approval import Approver
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.nodes.intake import AutoQuestioner, Gap, Questioner
+from mtd_agent.reviewer import Reviewer, SkillSet
 
 
 def run_pipeline(
@@ -38,17 +41,24 @@ def run_pipeline(
     categoriser: Categoriser,
     approver: Approver,
     questioner: Questioner | None = None,
+    reviewer: Reviewer | None = None,
+    tax_year: str = "2026-27",
+    scheme: VatScheme = VatScheme.STANDARD,
+    flat_rate_percent: Decimal | None = None,
     finalised: bool = True,
     period_key: str | None = None,
     audit_dir: Path | None = None,
 ) -> PipelineResult:
     questioner = questioner or AutoQuestioner()
+    reviewer = reviewer or Reviewer(SkillSet.load(tax_year))
     run_id = uuid.uuid4().hex[:12]
     audit = AuditLogger(run_id) if audit_dir is None else AuditLogger(run_id, audit_dir)
 
     config = {"configurable": {
-        "deps": Deps(client=client, categoriser=categoriser, approver=approver),
+        "deps": Deps(client=client, categoriser=categoriser, approver=approver, reviewer=reviewer),
         "audit": audit,
+        "scheme": scheme,
+        "flat_rate_percent": str(flat_rate_percent) if flat_rate_percent is not None else None,
         "run_id": run_id,
         "thread_id": run_id,   # required by the checkpointer
     }}

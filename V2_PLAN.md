@@ -127,19 +127,19 @@ New binding rules for agents (extend CONTRACT §1):
 - [x] A4 Guardrails v1: PII + injection input scan on transaction descriptions.
 
 ### Phase B — Supervisor routing + VAT schemes
-- [ ] B1 Supervisor classifies scheme (standard/flat-rate/cash); route to subgraph.
-- [ ] B2 Pure `compute_vat_flat_rate` + `compute_vat_cash` (fully unit-tested, like v1 core).
-- [ ] B3 Routing eval set (accuracy + "asks when unsure").
+- [x] B1 Supervisor classifies scheme (standard/flat-rate/cash); route to subgraph.
+- [x] B2 Pure `compute_vat_flat_rate` + `compute_vat_cash` (fully unit-tested, like v1 core).
+- [x] B3 Routing eval set (accuracy + "asks when unsure").
 
 ### Phase C — Skills KB + audit reviewer
-- [ ] C1 `skills/hmrc/<year>/*.md` with anchored rules (VAT scope, rates, schemes).
-- [ ] C2 Reviewer (read-only) → real-time cited comments in the approval view.
-- [ ] C3 `review` batch command over historical audit logs.
-- [ ] C4 Reviewer eval set (true issues vs false positives).
+- [x] C1 `skills/hmrc/<year>/*.md` with anchored rules (VAT scope, rates, schemes).
+- [x] C2 Reviewer (read-only) → real-time cited comments in the approval view.
+- [x] C3 `review` batch command over historical audit logs.
+- [x] C4 Reviewer eval set (true issues vs false positives).
 
 ### Cross-cutting (from the start)
-- [ ] Promote §5 addendum into `CONTRACT.md`; bump interface contract-version if the boundary moves.
-- [ ] Extend evals + observability alongside each phase — never bolt on later.
+- [x] Promote §5 addendum into `CONTRACT.md` (A1–A6 landed in Phase A); output guardrails added (hardening).
+- [x] Extend evals + observability alongside each phase — intake/reviewer/routing/guardrails eval sets.
 
 ### Deferred (explicit non-goals for now)
 - ITSA / Self-Assessment as a second tax type; RAG over full legislation; multi-tenant/accounts;
