@@ -87,8 +87,11 @@ def _guardrails(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
 
 def _extract(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     categorised = extract.categorise(state["txns"], _deps(config).categoriser)
+    # Record the (already guardrail-sanitised) description too, so a run can be re-reviewed
+    # from its audit trail alone (batch reviewer, Phase C3).
     _audit(config).emit("extract", {"categorised": [
-        {"id": c.txn.id, "treatment": c.treatment.value, "confidence": c.confidence}
+        {"id": c.txn.id, "description": c.txn.description,
+         "treatment": c.treatment.value, "confidence": c.confidence}
         for c in categorised
     ]})
     return {"categorised": categorised}

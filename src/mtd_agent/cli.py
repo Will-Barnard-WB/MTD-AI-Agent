@@ -80,6 +80,18 @@ def _demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review(args: argparse.Namespace) -> int:
+    """Phase C3 — batch-review historical audit logs for cited anomalies/patterns."""
+    from mtd_agent.reviewer.batch import render_report, review_audit_dir
+
+    if not args.audit_dir.is_dir():
+        print(f"No audit directory at {args.audit_dir} — run a demo first.")
+        return 2
+    report = review_audit_dir(audit_dir=args.audit_dir, tax_year=args.tax_year)
+    print(render_report(report))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="mtd_agent")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -94,6 +106,11 @@ def main() -> int:
                            "Default: offline FakeHmrcVatClient.")
     demo.add_argument("--draft", action="store_true", help="Submit with finalised=false.")
     demo.set_defaults(func=_demo, real_llm=False)
+
+    review = sub.add_parser("review", help="Batch-review historical audit logs (Phase C3).")
+    review.add_argument("--audit-dir", type=Path, default=Path("audit"))
+    review.add_argument("--tax-year", default="2026-27")
+    review.set_defaults(func=_review)
 
     args = parser.parse_args()
     return args.func(args)
