@@ -2,6 +2,18 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-08] supervisor | Scheme router promoted to a live front-of-graph node (interrupt HITL)
+Closed the half-wired gap: `classify_scheme` was tested/eval'd but not a live node — scheme came
+in as config. Now a `supervisor` node runs first (`START → supervisor → ingest → …`), resolving the
+scheme: explicit > classified-from-`business_profile` > **ask the human via `interrupt()` when
+unsure** > standard default. Scheme now flows through `GraphState` (resolved by the node); `_compute`
+reads it. New `SchemeChooser`/`AutoSchemeChooser`/`CLISchemeChooser` (parallel to intake's Questioner);
+`run_pipeline` gains `business_profile` + `scheme_chooser`; the interrupt driver handles both the
+scheme question and intake gaps. CLI: `demo --scheme/--profile/--flat-rate-percent` (verified live —
+a conflicting profile prompts "Which scheme?"). Audit: `scheme_resolved` with source
+(provided/classified/asked/default). Both supervisor halves (gather=intake, route=this) are now live
+nodes. 100 tests green, ruff clean.
+
 ## [2026-07-07] v2 Sessions 2–5 | Phase C (reviewer+skills), Phase B (schemes), hardening — v2 DONE
 Built the rest of v2 in one block (96 tests green, ruff clean):
 - **Session 2 (C1+C2):** versioned skills KB `skills/hmrc/2026-27/*.md` (anchored, citable rules) +

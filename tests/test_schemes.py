@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from mtd_agent.audit import AuditLogger
 from mtd_agent.graph.pipeline import run_pipeline
 from mtd_agent.graph.state import Status
 from mtd_agent.hmrc.fake_client import FakeHmrcVatClient
@@ -94,3 +95,42 @@ def test_pipeline_routes_flat_rate(tmp_path):
     assert result.status == Status.SUBMITTED
     # Flat-rate Box 1 is a % of gross turnover, not summed per-transaction VAT.
     assert result.boxes.box4_vat_reclaimed == Decimal("0.00")
+
+
+# --- Live supervisor node (B1 wired into the graph) ----------------------- #
+
+def _run_super(tmp_path, **kw):
+    return run_pipeline(
+        csv_path=EXAMPLE_CSV, vrn="123456789", client=FakeHmrcVatClient(),
+        categoriser=_AllStandardSales(), approver=AutoApprover(True),
+        questioner=AutoQuestioner(), audit_dir=tmp_path, **kw,
+    )
+
+
+def _scheme_resolved(tmp_path, run_id) -> dict:
+    events = AuditLogger(run_id, tmp_path).read_all()
+    return next(e for e in events if e.step == "scheme_resolved").payload
+
+
+def test_supervisor_classifies_scheme_from_profile(tmp_path):
+    r = _run_super(tmp_path, business_profile="We use cash accounting for VAT")
+    assert _scheme_resolved(tmp_path, r.run_id) == {"scheme": "cash", "source": "classified"}
+
+
+def test_supervisor_asks_when_unsure_and_uses_the_answer(tmp_path):
+    from mtd_agent.nodes.routing import AutoSchemeChooser
+    r = _run_super(tmp_path, business_profile="flat rate scheme and cash accounting both apply",
+                   scheme_chooser=AutoSchemeChooser("cash"))
+    assert r.status == Status.SUBMITTED
+    assert _scheme_resolved(tmp_path, r.run_id) == {"scheme": "cash", "source": "asked"}
+
+
+def test_supervisor_explicit_scheme_skips_classification(tmp_path):
+    r = _run_super(tmp_path, scheme=VatScheme.STANDARD,
+                   business_profile="mentions flat rate but is ignored")
+    assert _scheme_resolved(tmp_path, r.run_id)["source"] == "provided"
+
+
+def test_supervisor_defaults_to_standard_with_no_hint(tmp_path):
+    r = _run_super(tmp_path)
+    assert _scheme_resolved(tmp_path, r.run_id) == {"scheme": "standard", "source": "default"}
