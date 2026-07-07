@@ -32,6 +32,45 @@ def test_detect_gaps_flags_low_confidence():
     cats = [_cat("A", VatTreatment.STANDARD, 0.9), _cat("B", VatTreatment.STANDARD, 0.4)]
     gaps = detect_gaps(cats)
     assert [g.txn_id for g in gaps] == ["B"]
+    assert any("low confidence" in r for r in gaps[0].reasons)
+
+
+def _cat_desc(txn_id: str, description: str, conf: float) -> CategorisedTransaction:
+    txn = Transaction(id=txn_id, date=date(2026, 1, 1), description=description,
+                      amount=Decimal("120.00"), direction=Direction.SALE)
+    return CategorisedTransaction(txn=txn, treatment=VatTreatment.STANDARD, category="x",
+                                  confidence=conf)
+
+
+def test_detect_gaps_flags_confident_but_opaque():
+    """Calibration: a HIGH-confidence but opaque description is still flagged —
+    the fix for 'confidently wrong'."""
+    gaps = detect_gaps([_cat_desc("A", "Payment", 0.95)])
+    assert [g.txn_id for g in gaps] == ["A"]
+    assert any("opaque" in r for r in gaps[0].reasons)
+
+
+def test_detect_gaps_flags_conflicting_cues():
+    gaps = detect_gaps([_cat_desc("A", "Train tickets and insurance excess", 0.9)])
+    assert [g.txn_id for g in gaps] == ["A"]
+    assert any("conflicting" in r for r in gaps[0].reasons)
+
+
+def test_clear_confident_transaction_is_not_flagged():
+    assert detect_gaps([_cat_desc("A", "Consulting fee for Q1 project", 0.95)]) == []
+
+
+def test_fake_categoriser_reports_honest_confidence():
+    from mtd_agent.nodes.extract import FakeCategoriser
+    txns = [
+        Transaction(id="hit", date=date(2026, 1, 1), description="Train ticket to Leeds",
+                    amount=Decimal("10"), direction=Direction.PURCHASE),
+        Transaction(id="miss", date=date(2026, 1, 1), description="Consulting fee",
+                    amount=Decimal("10"), direction=Direction.SALE),
+    ]
+    by_id = {c.id: c for c in FakeCategoriser().categorise(txns)}
+    assert by_id["hit"].confidence == 0.9    # keyword rule fired → confident
+    assert by_id["miss"].confidence < 0.6    # default guess → honestly unsure (fires intake)
 
 
 def test_apply_answers_overrides_and_confirms():

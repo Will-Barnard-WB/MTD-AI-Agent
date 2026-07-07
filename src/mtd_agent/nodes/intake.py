@@ -13,13 +13,40 @@ The question *detection* is deterministic for now (low confidence). An LLM quest
 
 from __future__ import annotations
 
+import re
 from typing import Protocol
 
 from pydantic import BaseModel
 
 from mtd_agent.models import CategorisedTransaction, VatTreatment
+from mtd_agent.nodes.extract import matched_treatments
 
 _LOW_CONFIDENCE = 0.6
+
+# Tokens that carry no categorisation signal — a description made only of these (or
+# too short) is opaque and worth a human check, however confident the model claims to be.
+_GENERIC_TOKENS = {
+    "misc", "miscellaneous", "sundry", "sundries", "payment", "transfer", "ref",
+    "reference", "adjustment", "correction", "other", "txn", "transaction", "item", "na",
+}
+
+
+def _informative_tokens(description: str) -> list[str]:
+    words = re.findall(r"[a-z]+", description.lower())
+    return [w for w in words if len(w) > 2 and w not in _GENERIC_TOKENS]
+
+
+def ambiguity_reasons(description: str) -> list[str]:
+    """Provider-independent reasons a categorisation is objectively worth confirming —
+    independent of the model's (often overconfident) self-reported confidence. This is
+    the calibration signal that catches 'confidently wrong'."""
+    reasons: list[str] = []
+    if not _informative_tokens(description):
+        reasons.append("opaque/low-information description")
+    cues = matched_treatments(description)
+    if len(cues) >= 2:
+        reasons.append(f"conflicting treatment cues ({', '.join(sorted(t.value for t in cues))})")
+    return reasons
 
 
 class Gap(BaseModel):
@@ -29,12 +56,14 @@ class Gap(BaseModel):
     description: str
     suggested: VatTreatment
     confidence: float
+    reasons: list[str] = []   # why this was flagged (calibration + confidence)
 
     @property
     def prompt(self) -> str:
         opts = "/".join(t.value for t in VatTreatment)
+        why = f" [{'; '.join(self.reasons)}]" if self.reasons else ""
         return (f"{self.txn_id} '{self.description}' — suggested {self.suggested.value} "
-                f"(conf {self.confidence:.2f}). Treatment? [{opts}] (Enter = keep): ")
+                f"(conf {self.confidence:.2f}){why}. Treatment? [{opts}] (Enter = keep): ")
 
 
 class IntakeResult(BaseModel):
@@ -46,12 +75,21 @@ class IntakeResult(BaseModel):
 
 
 def detect_gaps(categorised: list[CategorisedTransaction]) -> list[Gap]:
-    """Transactions the categoriser was not confident about — worth a human confirm."""
-    return [
-        Gap(txn_id=c.txn.id, description=c.txn.description,
-            suggested=c.treatment, confidence=c.confidence)
-        for c in categorised if c.confidence < _LOW_CONFIDENCE
-    ]
+    """Transactions worth a human confirm before compute.
+
+    Flags on *either* low (calibrated) confidence *or* a provider-independent ambiguity
+    signal (opaque or conflicting-cue descriptions). The second arm is the calibration
+    fix: it catches transactions the model is confidently wrong about — where a raw
+    confidence threshold alone would let them through."""
+    gaps: list[Gap] = []
+    for c in categorised:
+        reasons = ambiguity_reasons(c.txn.description)
+        if c.confidence < _LOW_CONFIDENCE:
+            reasons.append(f"low confidence ({c.confidence:.2f})")
+        if reasons:
+            gaps.append(Gap(txn_id=c.txn.id, description=c.txn.description,
+                            suggested=c.treatment, confidence=c.confidence, reasons=reasons))
+    return gaps
 
 
 def apply_answers(
@@ -99,6 +137,7 @@ def clarification_log(
         log.append({
             "txn_id": g.txn_id,
             "question": g.prompt,
+            "reasons": g.reasons,
             "answer": raw,
             "outcome": "changed" if was_changed else "kept",
             "from": g.suggested.value,

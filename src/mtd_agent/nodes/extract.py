@@ -138,9 +138,23 @@ _KEYWORD_RULES: list[tuple[tuple[str, ...], VatTreatment]] = [
 ]
 
 
+def matched_treatments(description: str) -> set[VatTreatment]:
+    """Which VAT treatments the offline keyword rules cue for a description.
+
+    Provider-independent — used by intake's ambiguity heuristic (a description that
+    cues *two* different treatments is objectively worth a human check, whatever the
+    model's self-reported confidence)."""
+    desc = description.lower()
+    return {mapped for keywords, mapped in _KEYWORD_RULES if any(k in desc for k in keywords)}
+
+
 class FakeCategoriser:
     """Deterministic, network-free categoriser. NOT for production accuracy —
-    a stand-in so the pipeline (and the demo) runs without spending LLM credits."""
+    a stand-in so the pipeline (and the demo) runs without spending LLM credits.
+
+    Reports *honest* confidence: high when a keyword rule fired, low when it fell
+    through to the default (a genuine guess). This is what lets intake fire offline
+    — a fixed 0.9 made the clarification gate dormant."""
 
     def __init__(self, default: VatTreatment = VatTreatment.STANDARD) -> None:
         self._default = default
@@ -149,14 +163,18 @@ class FakeCategoriser:
         out: list[TxnCategory] = []
         for t in txns:
             desc = t.description.lower()
-            treatment = self._default
+            treatment, matched = self._default, False
             for keywords, mapped in _KEYWORD_RULES:
                 if any(k in desc for k in keywords):
-                    treatment = mapped
+                    treatment, matched = mapped, True
                     break
+            if matched:
+                confidence, reasoning = 0.9, "keyword-rule (offline fake)"
+            else:
+                confidence, reasoning = 0.35, "no keyword rule matched — default guess (offline fake)"
             out.append(TxnCategory(
                 id=t.id, treatment=treatment,
                 category=desc.split()[0] if desc else "uncategorised",
-                confidence=0.9, reasoning="keyword-rule (offline fake)",
+                confidence=confidence, reasoning=reasoning,
             ))
         return out

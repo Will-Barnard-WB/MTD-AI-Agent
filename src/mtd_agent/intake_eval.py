@@ -109,7 +109,7 @@ def run_case(case: IntakeCase, detector: Detector = detect_gaps) -> IntakeResult
 
 def main() -> int:
     cases = load_cases()
-    print("Intake eval — detector: detect_gaps (low-confidence threshold)\n")
+    print("Intake eval — detector: detect_gaps (calibrated confidence + ambiguity heuristic)\n")
     print(f"{'case':<28} {'flagged':>7} {'gold':>4} {'prec':>6} {'recall':>7} {'F1':>6}")
     print("-" * 62)
 
