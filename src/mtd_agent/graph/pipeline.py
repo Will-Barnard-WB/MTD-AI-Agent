@@ -30,6 +30,7 @@ from mtd_agent.models import VatScheme
 from mtd_agent.nodes.approval import Approver
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.nodes.intake import AutoQuestioner, Gap, Questioner
+from mtd_agent.nodes.routing import AutoSchemeChooser, SchemeChooser
 from mtd_agent.reviewer import Reviewer, SkillSet
 
 
@@ -42,14 +43,17 @@ def run_pipeline(
     approver: Approver,
     questioner: Questioner | None = None,
     reviewer: Reviewer | None = None,
+    scheme_chooser: SchemeChooser | None = None,
     tax_year: str = "2026-27",
-    scheme: VatScheme = VatScheme.STANDARD,
+    scheme: VatScheme | None = None,
+    business_profile: str = "",
     flat_rate_percent: Decimal | None = None,
     finalised: bool = True,
     period_key: str | None = None,
     audit_dir: Path | None = None,
 ) -> PipelineResult:
     questioner = questioner or AutoQuestioner()
+    scheme_chooser = scheme_chooser or AutoSchemeChooser()
     reviewer = reviewer or Reviewer(SkillSet.load(tax_year))
     run_id = uuid.uuid4().hex[:12]
     audit = AuditLogger(run_id) if audit_dir is None else AuditLogger(run_id, audit_dir)
@@ -57,7 +61,6 @@ def run_pipeline(
     config = {"configurable": {
         "deps": Deps(client=client, categoriser=categoriser, approver=approver, reviewer=reviewer),
         "audit": audit,
-        "scheme": scheme,
         "flat_rate_percent": str(flat_rate_percent) if flat_rate_percent is not None else None,
         "run_id": run_id,
         "thread_id": run_id,   # required by the checkpointer
@@ -67,20 +70,27 @@ def run_pipeline(
         "vrn": vrn,
         "finalised": finalised,
         "period_key": period_key,
+        "business_profile": business_profile,
     }
+    if scheme is not None:               # explicit scheme skips classification
+        initial["scheme"] = scheme
 
     final = PIPELINE_GRAPH.invoke(initial, config=config)
-    # Drive any HITL interrupt(s) (intake clarifications) to completion. The resume
-    # value is wrapped so it is never falsy (LangGraph ignores a falsy resume).
-    for _ in range(100):  # safety cap — a well-formed intake resolves in one round
+    # Drive any HITL interrupt(s) — the supervisor's scheme question and/or intake
+    # clarifications — to completion. Each resume value is wrapped so it is never falsy
+    # (LangGraph ignores a falsy resume).
+    for _ in range(100):  # safety cap — well-formed HITL resolves in a few rounds
         if "__interrupt__" not in final:
             break
         payload = final["__interrupt__"][0].value
-        gaps = [Gap(**g) for g in payload["gaps"]]
-        answers = questioner.answer(gaps)
-        final = PIPELINE_GRAPH.invoke(Command(resume={"answers": answers}), config=config)
+        if payload.get("ask") == "vat_scheme":
+            resume = {"scheme": scheme_chooser.choose(payload)}
+        else:  # intake clarification gaps
+            gaps = [Gap(**g) for g in payload["gaps"]]
+            resume = {"answers": questioner.answer(gaps)}
+        final = PIPELINE_GRAPH.invoke(Command(resume=resume), config=config)
     else:
-        raise RuntimeError("intake did not resolve within 100 interrupt rounds")
+        raise RuntimeError("HITL did not resolve within 100 interrupt rounds")
 
     return PipelineResult(
         status=final["status"],

@@ -12,6 +12,7 @@ get_token, and HMRC_TEST_VRN). It stays sandbox-only — config.assert_sandbox b
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal
 from pathlib import Path
 
 from mtd_agent.config import Settings
@@ -20,9 +21,11 @@ from mtd_agent.graph.state import Status
 from mtd_agent.hmrc.errors import HmrcAuthError, HmrcError
 from mtd_agent.hmrc.fake_client import FakeHmrcVatClient
 from mtd_agent.hmrc.vat_client import HmrcVatClient
+from mtd_agent.models import VatScheme
 from mtd_agent.nodes.approval import CLIApprover
 from mtd_agent.nodes.extract import FakeCategoriser, OpenAICategoriser
 from mtd_agent.nodes.intake import CLIQuestioner
+from mtd_agent.nodes.routing import CLISchemeChooser
 
 _DEFAULT_CSV = Path("examples/sample_transactions.csv")
 
@@ -62,6 +65,10 @@ def _demo(args: argparse.Namespace) -> int:
             categoriser=categoriser,
             approver=CLIApprover(),
             questioner=CLIQuestioner(),
+            scheme_chooser=CLISchemeChooser(),
+            scheme=VatScheme(args.scheme) if args.scheme else None,
+            business_profile=args.profile,
+            flat_rate_percent=Decimal(args.flat_rate_percent) if args.flat_rate_percent else None,
             finalised=not args.draft,
         )
     except HmrcError as exc:
@@ -105,6 +112,12 @@ def main() -> int:
                       help="Submit to the real HMRC VAT sandbox (needs .env creds + test user). "
                            "Default: offline FakeHmrcVatClient.")
     demo.add_argument("--draft", action="store_true", help="Submit with finalised=false.")
+    demo.add_argument("--scheme", choices=[s.value for s in VatScheme],
+                      help="Set the VAT scheme explicitly (skips the supervisor's classifier).")
+    demo.add_argument("--profile", default="",
+                      help="Business profile hint; the supervisor classifies the scheme, "
+                           "asking you if unsure.")
+    demo.add_argument("--flat-rate-percent", help="Flat-rate %% (required for --scheme flat_rate).")
     demo.set_defaults(func=_demo, real_llm=False)
 
     review = sub.add_parser("review", help="Batch-review historical audit logs (Phase C3).")

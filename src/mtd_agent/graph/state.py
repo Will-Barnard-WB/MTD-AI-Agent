@@ -15,7 +15,13 @@ from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict
 
-from mtd_agent.models import CategorisedTransaction, SubmitReceipt, Transaction, VatBoxes
+from mtd_agent.models import (
+    CategorisedTransaction,
+    SubmitReceipt,
+    Transaction,
+    VatBoxes,
+    VatScheme,
+)
 from mtd_agent.nodes.intake import IntakeResult
 
 
@@ -35,7 +41,9 @@ class GraphState(TypedDict, total=False):
     vrn: str
     finalised: bool
     period_key: str | None
+    business_profile: str          # free-text hint for the supervisor's scheme classifier
     # working data produced by nodes
+    scheme: VatScheme              # resolved by the supervisor node (may ask the human)
     txns: list[Transaction]
     categorised: list[CategorisedTransaction]
     intake: "IntakeResult"

@@ -9,6 +9,8 @@ The router only *picks a path*; the path's compute is still pure and gated (CONT
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from mtd_agent.models import VatScheme
 
 _FLAT_RATE_CUES = ("flat rate", "flat-rate", " frs", "frs ")
@@ -29,3 +31,31 @@ def classify_scheme(profile: str) -> VatScheme | None:
     if len(picked) == 1:
         return picked[0]
     return None   # zero signals (unsure) or multiple (conflicting) → ask
+
+
+class SchemeChooser(Protocol):
+    """Answers the supervisor's scheme question when classification is unsure.
+    `prompt` carries the profile + valid options; returns a VatScheme *value* string."""
+
+    def choose(self, prompt: dict) -> str: ...
+
+
+class AutoSchemeChooser:
+    """Non-interactive chooser for tests + unattended runs. Default: standard."""
+
+    def __init__(self, scheme: str = VatScheme.STANDARD.value) -> None:
+        self._scheme = scheme
+
+    def choose(self, prompt: dict) -> str:
+        return self._scheme
+
+
+class CLISchemeChooser:
+    """Asks the human at the terminal which VAT scheme applies."""
+
+    def choose(self, prompt: dict) -> str:
+        opts = "/".join(prompt.get("options", [s.value for s in VatScheme]))
+        profile = prompt.get("profile", "")
+        resp = input(f"\nVAT scheme unclear for '{profile}'. Which scheme? "
+                     f"[{opts}] (Enter = standard): ").strip().lower()
+        return resp or VatScheme.STANDARD.value

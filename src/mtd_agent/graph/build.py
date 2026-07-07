@@ -7,13 +7,14 @@ serializable for the checkpointer that A2's HITL interrupts will use.
 
 Flow (early-exits go straight to END, nothing reaches HMRC on those paths):
 
-    ingest → guardrails → extract → intake → completeness ─┬─(incomplete)──────────► END
-                                                           └─► compute → resolve_period ─┬─(no period)─► END
-                                                                                         └─► approval ─┬─(declined)─► END
-                                                                                                       └─► submit ─► END
+    supervisor → ingest → guardrails → extract → intake → completeness ─┬─(incomplete)─► END
+                                                                        └─► compute → resolve_period ─┬─(no period)─► END
+                                                                                                      └─► approval ─┬─(declined)─► END
+                                                                                                                    └─► submit ─► END
 
-`guardrails` (A4) scans untrusted descriptions before the LLM; `intake` (A2) may
-`interrupt()` to clarify low-confidence categorisations with the human.
+`supervisor` (B1) resolves the VAT scheme, asking via `interrupt()` when unsure; `guardrails`
+(A4) scans untrusted descriptions before the LLM; `intake` (A2) may `interrupt()` to clarify
+low-confidence categorisations; `approval` runs the reviewer (C2) then the human gate.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from mtd_agent.models import ObligationStatus, VatReturnPayload, VatScheme
 from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
 from mtd_agent.nodes.approval import Approver, build_derivation
 from mtd_agent.nodes.extract import Categoriser
+from mtd_agent.nodes.routing import classify_scheme
 from mtd_agent.reviewer.reviewer import Reviewer
 from mtd_agent.graph.state import GraphState, Status
 
@@ -61,10 +63,6 @@ def _audit(config: RunnableConfig) -> AuditLogger:
     return config["configurable"]["audit"]
 
 
-def _scheme(config: RunnableConfig) -> VatScheme:
-    return config["configurable"].get("scheme", VatScheme.STANDARD)
-
-
 def _flat_rate_percent(config: RunnableConfig) -> Decimal | None:
     pct = config["configurable"].get("flat_rate_percent")
     return Decimal(str(pct)) if pct is not None else None
@@ -73,6 +71,34 @@ def _flat_rate_percent(config: RunnableConfig) -> Decimal | None:
 # --------------------------------------------------------------------------- #
 # Nodes (thin wrappers over the pure v1 functions)
 # --------------------------------------------------------------------------- #
+
+
+def _supervisor(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
+    """B1 — resolve the VAT scheme up front (the routing half of the supervisor).
+
+    Priority: explicit scheme > classified-from-profile > ask the human > standard default.
+    When the profile is given but classification is unsure, it PAUSES via interrupt() and
+    asks — like intake, it asks instead of guessing. The router only picks a *path*; the
+    path's compute stays pure and gated (CONTRACT §8 A2)."""
+    audit = _audit(config)
+    if state.get("scheme") is not None:
+        resolved, source = state["scheme"], "provided"
+    elif not (state.get("business_profile") or "").strip():
+        resolved, source = VatScheme.STANDARD, "default"
+    else:
+        classified = classify_scheme(state["business_profile"])
+        if classified is None:
+            resumed: dict = interrupt({"ask": "vat_scheme",
+                                       "profile": state["business_profile"],
+                                       "options": [s.value for s in VatScheme]})
+            chosen = (resumed or {}).get("scheme", VatScheme.STANDARD.value)
+            valid = {s.value for s in VatScheme}
+            resolved = VatScheme(chosen) if chosen in valid else VatScheme.STANDARD
+            source = "asked"
+        else:
+            resolved, source = classified, "classified"
+    audit.emit("scheme_resolved", {"scheme": resolved.value, "source": source})
+    return {"scheme": resolved}
 
 
 def _ingest(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -147,7 +173,7 @@ def _completeness(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
 def _compute(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
     """Route to the pure compute for the business's VAT scheme (Phase B). The router
     picks the path; every path is pure and still faces the HITL gate (CONTRACT §8 A2)."""
-    scheme = _scheme(config)
+    scheme = state.get("scheme") or VatScheme.STANDARD
     cats = state["categorised"]
     if scheme == VatScheme.FLAT_RATE:
         pct = _flat_rate_percent(config)
@@ -232,6 +258,7 @@ def build_pipeline_graph():
     """Compile the pipeline StateGraph. Compiled once and reused (deps come per-run
     via config); a checkpointer is added in A2 when HITL interrupts land."""
     g = StateGraph(GraphState)
+    g.add_node("supervisor", _supervisor)
     g.add_node("ingest", _ingest)
     g.add_node("guardrails", _guardrails)
     g.add_node("extract", _extract)
@@ -242,7 +269,8 @@ def build_pipeline_graph():
     g.add_node("approval", _approval)
     g.add_node("submit", _submit)
 
-    g.add_edge(START, "ingest")
+    g.add_edge(START, "supervisor")
+    g.add_edge("supervisor", "ingest")
     g.add_edge("ingest", "guardrails")
     g.add_edge("guardrails", "extract")
     g.add_edge("extract", "intake")
