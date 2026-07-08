@@ -2,6 +2,20 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-08] dashboard | Self-hosted, LangSmith-style console (Streamlit) built
+Built the console per `DASHBOARD_PLAN.md`. `./.venv/bin/streamlit run dashboard/app.py`. Bespoke +
+local, no data egress. `dashboard/data.py` (importable, tested) is a read-only lens over the audit
+trail: run summaries (status/scheme/period/net-VAT/txns/warnings/timing) + per-node traces with
+per-step duration derived from event timestamps (no telemetry code change needed — `AuditEvent.ts`
+already exists). `dashboard/app.py` = thin Streamlit UI, 6 pages: **Runs** (list + LangSmith-style
+trace explorer), **Trigger run** (offline fake+auto-approve, safe), **Playground** (guardrail scan /
+scheme classifier / fake categoriser), **Tests & Experiments** (subprocess pytest/ruff/all 5 eval
+harnesses), **Monitoring** (counts + SANDBOX badge + config), **Command catalog**. Verified with
+Streamlit `AppTest` — all 6 pages render in-process with no exception (7 smoke tests). streamlit added
+to `[dev]`; pytest pythonpath += "." for the dashboard package. 113 tests green, ruff clean.
+**Deferred (plan S3):** full interactive HITL *in the browser* (approval/intake/supervisor asking
+live) — needs the approval-as-interrupt refactor; the offline trigger covers the safe path for now.
+
 ## [2026-07-08] supervisor | Scheme router promoted to a live front-of-graph node (interrupt HITL)
 Closed the half-wired gap: `classify_scheme` was tested/eval'd but not a live node — scheme came
 in as config. Now a `supervisor` node runs first (`START → supervisor → ingest → …`), resolving the
