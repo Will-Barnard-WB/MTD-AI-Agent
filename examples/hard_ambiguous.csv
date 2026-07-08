@@ -1,0 +1,9 @@
+id,date,description,amount,direction
+A1,2026-03-02,Insurance seminar including train travel,420.00,purchase
+A2,2026-03-05,Rent of book storage unit,300.00,purchase
+A3,2026-03-08,Interest charge on staff food loan,60.00,purchase
+A4,2026-03-11,Misc,180.00,purchase
+A5,2026-03-14,Sundry adjustment,95.00,purchase
+A6,2026-03-18,Payment,1400.00,sale
+A7,2026-03-21,General expenses Q1,540.00,purchase
+A8,2026-03-25,Rebilled travel and catering,220.00,sale

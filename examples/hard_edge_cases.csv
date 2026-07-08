@@ -1,0 +1,9 @@
+id,date,description,amount,direction
+E1,2026-03-01,Construction subcontractor labour (CIS domestic reverse charge),5200.00,purchase
+E2,2026-03-03,EU digital advertising services from Ireland (reverse charge),1600.00,purchase
+E3,2026-03-05,Import of goods from USA (postponed VAT accounting),3400.00,purchase
+E4,2026-03-07,Business entertainment - client dinner,320.00,purchase
+E5,2026-03-10,Opted-to-tax commercial rent received,4500.00,sale
+E6,2026-03-13,Bad debt relief adjustment on unpaid invoice,900.00,sale
+E7,2026-03-16,Deposit received for future order,1200.00,sale
+E8,2026-03-20,Fuel for company car (private use apportioned),260.00,purchase

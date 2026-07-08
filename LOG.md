@@ -2,6 +2,25 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-08] dashboard | Live in-browser HITL (plan S3) + hard test example sets
+Closed the deferred S3 gap: the console now runs **real** returns and asks the human the HITL
+questions in the browser. (1) **Approval-as-interrupt refactor** — `_approval` now emits the
+derivation via `interrupt()` instead of a blocking callback; the CLI driver (`run_pipeline`) handles
+the new `"ask":"approval"` interrupt via the injected `Approver`, so all three HITL points (scheme /
+intake / approval) are unified on `interrupt()`. `Approver` removed from `Deps` (nothing inside the
+graph decides to submit). Side-effecting audit emits moved *after* the interrupt (code before it
+re-runs on resume). (2) **`dashboard/session.py` `RunSession`** — steps the graph one interrupt at a
+time (`start` → inspect `pending` → `resume`), state persisted by the checkpointer across Streamlit
+reruns; works with real deps or fakes. Full choreography tested with fakes (`test_session.py`).
+(3) **Trigger page rewritten** → "Run a return": Real LLM + HMRC-sandbox by default (offline fakes
+optional), renders the scheme radio / intake selectboxes / approval derivation + Approve·Decline
+in-browser. (4) **Hard example sets** in `examples/` (+ README): `hard_ambiguous` (intake HITL),
+`hard_reduced_rate` (reviewer/5%), `hard_edge_cases` (reverse charge, postponed import, opted-to-tax
+rent, entertainment, bad debt), `hard_adversarial` (PII + injection — verified `guardrails_flagged`
+fires; the HTML-comment line intentionally slips the regex to show the human gate is the backstop),
+`hard_large_mixed` (anomalies + volume). Added 6 verified guardrails eval cases. 117 tests green,
+ruff clean. Real-LLM + real-HMRC interactive path is user-verified live (no creds/browser here).
+
 ## [2026-07-08] dashboard | Self-hosted, LangSmith-style console (Streamlit) built
 Built the console per `DASHBOARD_PLAN.md`. `./.venv/bin/streamlit run dashboard/app.py`. Bespoke +
 local, no data egress. `dashboard/data.py` (importable, tested) is a read-only lens over the audit

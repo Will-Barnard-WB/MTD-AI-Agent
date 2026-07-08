@@ -125,30 +125,122 @@ def page_tests() -> None:
         st.code(out or "(no output)")
 
 
-def page_trigger() -> None:
-    st.header("Trigger run (offline)")
-    st.caption("Runs the full pipeline with the offline FakeCategoriser + fake HMRC client + "
-               "auto-approve — safe, free, no submit. Full interactive HITL triggering is the "
-               "deferred S3 piece (needs approval-as-interrupt).")
+def _new_run_form() -> None:
+    st.header("Run a return")
+    st.caption("Drives the full pipeline live and asks you the HITL questions here — "
+               "scheme, intake clarifications, and the approval gate.")
+    settings = Settings.load()
+    has_llm = bool(getattr(settings, "openai_api_key", None))
+    has_hmrc = bool(getattr(settings, "hmrc_client_id", None)
+                    and getattr(settings, "hmrc_test_vrn", None))
+
+    mode = st.radio("Mode", ["Real LLM + HMRC sandbox", "Offline (fakes)"],
+                    help="Real mode uses OpenAI + submits to the HMRC VAT sandbox.")
+    real = mode.startswith("Real")
+    if real and not has_llm:
+        st.error("OPENAI_API_KEY not set in .env — needed for real LLM. Use Offline, or set it.")
+    if real and not has_hmrc:
+        st.error("HMRC creds / HMRC_TEST_VRN not set — run `python -m mtd_agent.hmrc.get_token`.")
+
     csvs = sorted((ROOT / "examples").glob("*.csv"))
     csv = st.selectbox("CSV", [str(c.relative_to(ROOT)) for c in csvs])
-    scheme = st.selectbox("Scheme", [s.value for s in VatScheme])
-    pct = st.text_input("Flat-rate % (if flat_rate)", "14.5") if scheme == "flat_rate" else None
+    profile = st.text_input("Business profile (optional — supervisor classifies/asks the scheme)",
+                            "")
+    force = st.checkbox("Force a scheme (skip classification)")
+    scheme = st.selectbox("Scheme", [s.value for s in VatScheme]) if force else None
+    pct = st.text_input("Flat-rate %", "14.5") if scheme == "flat_rate" else None
 
-    if st.button("Run pipeline", type="primary"):
-        from mtd_agent.graph.pipeline import run_pipeline
+    disabled = real and (not has_llm or not has_hmrc)
+    if st.button("Start run", type="primary", disabled=disabled):
         from mtd_agent.hmrc.fake_client import FakeHmrcVatClient
-        from mtd_agent.nodes.approval import AutoApprover
+        if real:
+            from mtd_agent.hmrc.vat_client import HmrcVatClient as RealClient
+            from mtd_agent.nodes.extract import OpenAICategoriser
+            categoriser = OpenAICategoriser(settings.openai_api_key, settings.extraction_model)
+            client, vrn = RealClient(settings), settings.hmrc_test_vrn
+        else:
+            categoriser, client, vrn = FakeCategoriser(), FakeHmrcVatClient(), "123456789"
+        from dashboard.session import RunSession
+        sess = RunSession.create(
+            csv_path=ROOT / csv, vrn=vrn, categoriser=categoriser, client=client,
+            scheme=VatScheme(scheme) if scheme else None, business_profile=profile,
+            flat_rate_percent=Decimal(pct) if pct else None, audit_dir=AUDIT_DIR,
+        )
         with st.spinner("running…"):
-            result = run_pipeline(
-                csv_path=ROOT / csv, vrn="123456789", client=FakeHmrcVatClient(),
-                categoriser=FakeCategoriser(), approver=AutoApprover(True),
-                scheme=VatScheme(scheme),
-                flat_rate_percent=Decimal(pct) if pct else None,
-                audit_dir=AUDIT_DIR,
-            )
-        st.success(f"Status: {result.status.value} · run {result.run_id}")
-        st.write("See it in **Runs** → Trace.")
+            sess.start()
+        st.session_state.session = sess
+        st.rerun()
+
+
+def _render_pending(sess) -> None:
+    from mtd_agent.nodes.approval import Derivation, render
+    from mtd_agent.models import VatTreatment
+    pending = sess.pending
+    ask = pending.get("ask")
+
+    if ask == "vat_scheme":
+        st.subheader("🧭 Which VAT scheme?")
+        st.caption(f"Profile: _{pending.get('profile', '')}_")
+        choice = st.radio("Scheme", pending["options"])
+        if st.button("Confirm scheme", type="primary"):
+            sess.resume({"scheme": choice})
+            st.rerun()
+
+    elif ask == "approval":
+        st.subheader("🙋 Approve this return?")
+        d = Derivation.model_validate(pending["derivation"])
+        if d.review_comments:
+            st.warning("🔎 Reviewer (advisory, cited):")
+            for c in d.review_comments:
+                st.markdown(f"- **[{c.severity}]** {c.message}  `[skill: {c.citation}]`")
+        st.code(render(d))
+        c1, c2 = st.columns(2)
+        if c1.button("✅ Approve & submit", type="primary"):
+            sess.resume({"approved": True})
+            st.rerun()
+        if c2.button("❌ Decline"):
+            sess.resume({"approved": False})
+            st.rerun()
+
+    else:  # intake clarification gaps
+        st.subheader("🙋 Confirm these transactions before we compute")
+        opts = [t.value for t in VatTreatment]
+        answers: dict[str, str] = {}
+        with st.form("intake"):
+            for g in pending["gaps"]:
+                st.markdown(f"**{g['txn_id']}** — _{g['description']}_ "
+                            f"(suggested **{g['suggested']}**, {', '.join(g.get('reasons', []))})")
+                pick = st.selectbox(f"Treatment for {g['txn_id']}", ["(keep)"] + opts,
+                                    key=f"gap_{g['txn_id']}")
+                if pick != "(keep)":
+                    answers[g["txn_id"]] = pick
+            if st.form_submit_button("Confirm", type="primary"):
+                sess.resume({"answers": answers})
+                st.rerun()
+
+
+def page_trigger() -> None:
+    if "session" not in st.session_state:
+        _new_run_form()
+        return
+
+    sess = st.session_state.session
+    st.header("Run in progress")
+    st.caption(f"run `{sess.run_id}`")
+    if sess.done:
+        result = sess.result
+        status = sess.status.value if sess.status else "unknown"
+        (st.success if status == "submitted" else st.warning)(f"Status: {status}")
+        if result.get("receipt"):
+            st.write(f"HMRC form bundle: **{result['receipt'].form_bundle_number}**")
+        if result.get("boxes"):
+            st.json(result["boxes"].model_dump(mode="json"))
+        st.write("See the full trace in **Runs**.")
+        if st.button("Start another run"):
+            del st.session_state.session
+            st.rerun()
+    else:
+        _render_pending(sess)
 
 
 def page_health() -> None:
@@ -195,7 +287,7 @@ def page_catalog() -> None:
 
 PAGES = {
     "Runs": page_runs,
-    "Trigger run": page_trigger,
+    "Run a return": page_trigger,
     "Playground": page_playground,
     "Tests & Experiments": page_tests,
     "Monitoring": page_health,

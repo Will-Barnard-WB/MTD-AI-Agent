@@ -27,7 +27,7 @@ from mtd_agent.graph.build import PIPELINE_GRAPH, Deps
 from mtd_agent.graph.state import PipelineResult
 from mtd_agent.interfaces import HmrcVatClient
 from mtd_agent.models import VatScheme
-from mtd_agent.nodes.approval import Approver
+from mtd_agent.nodes.approval import Approver, Derivation
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.nodes.intake import AutoQuestioner, Gap, Questioner
 from mtd_agent.nodes.routing import AutoSchemeChooser, SchemeChooser
@@ -59,7 +59,7 @@ def run_pipeline(
     audit = AuditLogger(run_id) if audit_dir is None else AuditLogger(run_id, audit_dir)
 
     config = {"configurable": {
-        "deps": Deps(client=client, categoriser=categoriser, approver=approver, reviewer=reviewer),
+        "deps": Deps(client=client, categoriser=categoriser, reviewer=reviewer),
         "audit": audit,
         "flat_rate_percent": str(flat_rate_percent) if flat_rate_percent is not None else None,
         "run_id": run_id,
@@ -83,8 +83,12 @@ def run_pipeline(
         if "__interrupt__" not in final:
             break
         payload = final["__interrupt__"][0].value
-        if payload.get("ask") == "vat_scheme":
+        ask = payload.get("ask")
+        if ask == "vat_scheme":
             resume = {"scheme": scheme_chooser.choose(payload)}
+        elif ask == "approval":
+            derivation = Derivation.model_validate(payload["derivation"])
+            resume = {"approved": approver.approve(derivation)}
         else:  # intake clarification gaps
             gaps = [Gap(**g) for g in payload["gaps"]]
             resume = {"answers": questioner.answer(gaps)}

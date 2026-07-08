@@ -35,7 +35,7 @@ from decimal import Decimal
 from mtd_agent.interfaces import HmrcVatClient
 from mtd_agent.models import ObligationStatus, VatReturnPayload, VatScheme
 from mtd_agent.nodes import compute_vat, completeness, extract, ingest, intake, submit
-from mtd_agent.nodes.approval import Approver, build_derivation
+from mtd_agent.nodes.approval import build_derivation
 from mtd_agent.nodes.extract import Categoriser
 from mtd_agent.nodes.routing import classify_scheme
 from mtd_agent.reviewer.reviewer import Reviewer
@@ -51,8 +51,9 @@ class Deps:
 
     client: HmrcVatClient
     categoriser: Categoriser
-    approver: Approver
     reviewer: Reviewer
+    # NB: the approver is NOT here — the approval gate is now an interrupt() driven by the
+    # caller (CLI or web), so nothing inside the graph decides to submit.
 
 
 def _deps(config: RunnableConfig) -> Deps:
@@ -208,18 +209,26 @@ def _resolve_period(state: GraphState, config: RunnableConfig) -> dict[str, Any]
 
 
 def _approval(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
+    """The expert HITL gate as a LangGraph interrupt() so any driver — CLI or the web
+    console — can render the derivation + cited reviewer comments and resume with the
+    human's approve/decline. Everything BEFORE interrupt() re-runs on resume, so only the
+    pure reviewer/build runs there; the side-effecting audit emits happen once, after."""
     audit = _audit(config)
-    # Phase C2: read-only reviewer produces cited comments shown in the approval view.
-    # Output guardrail (hardening): drop any comment that isn't grounded + purely advisory,
-    # so no agent can slip a figure or box-change instruction into the approval view.
+    # Phase C2 (pure): read-only reviewer → cited comments; output guardrail drops any
+    # comment that isn't grounded + advisory so no agent can smuggle a figure into the view.
     comments = _deps(config).reviewer.review(state["categorised"])
     comments, dropped = guardrails.enforce_advisory(comments)
+    derivation = build_derivation(state["boxes"], state["categorised"], comments)
+
+    resumed: dict = interrupt({"ask": "approval",
+                               "derivation": derivation.model_dump(mode="json")})
+
+    # --- resumed (runs once) ---
     if dropped:
         audit.emit("reviewer_guardrail", {"dropped": dropped})
     if comments:
         audit.emit("reviewed", {"comments": [c.model_dump() for c in comments]})
-    derivation = build_derivation(state["boxes"], state["categorised"], comments)
-    if not _deps(config).approver.approve(derivation):
+    if not (resumed or {}).get("approved", False):
         audit.emit("declined", {"period_key": state["period_key"]})
         return {"status": Status.DECLINED}
     audit.emit("approved", {"period_key": state["period_key"], "anomalies": derivation.anomalies})

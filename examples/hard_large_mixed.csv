@@ -1,0 +1,11 @@
+id,date,description,amount,direction
+L1,2026-03-01,Sale of company vehicle,45000.00,sale
+L2,2026-03-03,Enterprise software licence renewal,120000.00,purchase
+L3,2026-03-05,Consulting fee,0.01,sale
+L4,2026-03-07,Quarterly retainer,8000.00,sale
+L5,2026-03-09,Cloud hosting,2400.00,purchase
+L6,2026-03-11,Staff payroll,31000.00,purchase
+L7,2026-03-13,Professional indemnity insurance,1200.00,purchase
+L8,2026-03-15,Train tickets rebilled to client,340.00,sale
+L9,2026-03-17,Office rent,6000.00,purchase
+L10,2026-03-19,Refurbishment materials,15750.00,purchase

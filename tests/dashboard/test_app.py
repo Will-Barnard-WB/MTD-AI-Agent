@@ -12,7 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[2] / "dashboard" / "app.py")
 
-PAGES = ["Runs", "Trigger run", "Playground", "Tests & Experiments",
+PAGES = ["Runs", "Run a return", "Playground", "Tests & Experiments",
          "Monitoring", "Command catalog"]
 
 
