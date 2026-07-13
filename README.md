@@ -14,6 +14,28 @@ Safety is the architecture: the **LLM never produces a figure that reaches HMRC*
 categorises; all arithmetic is pure Python), there's a **human approval gate** before every
 submit, submits are **idempotent**, and every step is **audited**. Sandbox only in v1.
 
+## Observability (LangSmith)
+
+Every run is traceable in [LangSmith](https://smith.langchain.com) — the graph nodes
+(`supervisor → ingest → guardrails → extract → intake → compute → approval → submit`),
+the HITL interrupts, and the LLM categoriser call (prompt, response, tokens) as a nested
+span. It's **opt-in** and off by default.
+
+```bash
+# 1. Create an API key: smith.langchain.com → Settings → API Keys
+# 2. In .env:
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=ls-...
+LANGSMITH_PROJECT=mtd-agent      # auto-creates on first trace — no UI setup needed
+# 3. Run as normal; traces appear under the project:
+python -m mtd_agent.cli demo --real-llm
+```
+
+Wiring lives in `config.configure_tracing()` (env activation) + `wrap_openai` on the
+categoriser (`nodes/extract.py`); LangGraph auto-traces the nodes. Note: enabling this
+sends run data (including transaction descriptions) to LangChain's cloud — v1 uses HMRC
+**sandbox** / example data only.
+
 ## Start here
 - **`CONTRACT.md`** — the rules (read first).
 - **`PLAN.md`** — architecture + action list.

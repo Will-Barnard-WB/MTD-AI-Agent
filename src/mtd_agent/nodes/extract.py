@@ -122,7 +122,16 @@ class OpenAICategoriser:
     def __init__(self, api_key: str, model: str) -> None:
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key)
+        # LangSmith: when tracing is on, this records each categorisation as a nested LLM
+        # span (prompt, response, tokens) under the graph run. No-op when tracing is off.
+        try:
+            from langsmith.wrappers import wrap_openai
+
+            client = wrap_openai(client)
+        except Exception:  # langsmith optional — never let tracing break categorisation
+            pass
+        self._client = client
         self._model = model
 
     def categorise(self, txns: list[Transaction]) -> list[TxnCategory]:

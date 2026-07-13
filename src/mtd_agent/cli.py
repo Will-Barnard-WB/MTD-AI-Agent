@@ -15,7 +15,7 @@ import argparse
 from decimal import Decimal
 from pathlib import Path
 
-from mtd_agent.config import Settings
+from mtd_agent.config import Settings, configure_tracing
 from mtd_agent.graph.pipeline import run_pipeline
 from mtd_agent.graph.state import Status
 from mtd_agent.hmrc.errors import HmrcAuthError, HmrcError
@@ -32,6 +32,10 @@ _DEFAULT_CSV = Path("examples/sample_transactions.csv")
 
 def _demo(args: argparse.Namespace) -> int:
     settings = Settings.load()
+
+    # LangSmith observability (opt-in via .env). Traces the graph + the LLM categoriser.
+    if configure_tracing(settings):
+        print(f"📡 LangSmith tracing → project '{settings.langsmith_project}'")
 
     # Categoriser (the LLM axis)
     if args.real_llm:

@@ -2,6 +2,22 @@
 _Append-only. Newest at top. Every instance adds a line at session end._
 
 ---
+## [2026-07-13] observability | Scrapped the Streamlit dashboard → LangSmith tracing
+Reversed the self-hosted-console direction: Will now wants LangSmith (the SaaS) for tracking runs.
+**Rolled back dashboard-only** (per Will): deleted `dashboard/` + `tests/dashboard/`, removed the
+streamlit dev-dep and the `pythonpath="."` tweak. **Kept** the approval-as-interrupt refactor (all
+three HITL points unified on `interrupt()` — independently good, and reverting core graph code was
+risky) and the 5 hard example CSVs + guardrails eval cases (useful for generating varied traces).
+**Wired LangSmith (opt-in):** `config.configure_tracing()` activates from `.env`
+(`LANGSMITH_TRACING`/`LANGSMITH_API_KEY`/`LANGSMITH_PROJECT`, default project `mtd-agent`); OpenAI
+client wrapped with `wrap_openai` in `nodes/extract.py` so the categoriser call is a nested LLM span
+(prompt/response/tokens); LangGraph auto-traces the nodes; CLI `demo` calls it + prints a banner.
+`langsmith>=0.9` promoted to an explicit dep (was transitive). `.env.example` + README documented.
+Note: **Playwright MCP cannot set up LangSmith** — it's allowlisted to grad-job sites only, and
+browser automation is the wrong tool anyway (setup is env + code; project auto-creates on first
+trace). Will must create the API key himself. 104 tests green, ruff clean. Live trace delivery is
+user-verified (needs a real key). Data-egress caveat noted (sandbox/example data only).
+
 ## [2026-07-08] dashboard | Live in-browser HITL (plan S3) + hard test example sets
 Closed the deferred S3 gap: the console now runs **real** returns and asks the human the HITL
 questions in the browser. (1) **Approval-as-interrupt refactor** — `_approval` now emits the
